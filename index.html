@@ -67,12 +67,48 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useCallback, useMemo, useRef } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, GraduationCap, LayoutDashboard, Lock, Unlock, ShieldCheck, WifiOff } from 'https://esm.sh/lucide-react@0.263.1';
+        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, GraduationCap, LayoutDashboard, Lock, Unlock, ShieldCheck, WifiOff, Loader2 } from 'https://esm.sh/lucide-react@0.263.1';
         
         // Firebase Imports (Stable Version)
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
         import { getFirestore, doc, addDoc, onSnapshot, collection, query, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
+
+        // --- Error Boundary Component ---
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+            componentDidCatch(error, errorInfo) {
+                console.error("React Error Boundary caught:", error, errorInfo);
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+                            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg w-full border-l-4 border-red-500">
+                                <h1 className="text-2xl font-bold text-slate-800 mb-2 flex items-center">
+                                    <AlertTriangle className="w-8 h-8 text-red-500 mr-3"/>
+                                    Application Error
+                                </h1>
+                                <p className="text-slate-600 mb-4">Something went wrong while loading the app.</p>
+                                <div className="bg-slate-100 p-4 rounded-lg overflow-auto text-xs font-mono text-red-600 mb-6 max-h-40">
+                                    {this.state.error?.toString() || "Unknown Error"}
+                                </div>
+                                <button onClick={() => window.location.reload()} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-colors">
+                                    Reload Application
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
 
         // --- Global Constants and Firebase Initialization ---
 
@@ -91,16 +127,28 @@
 
         const CABIN_COUNT = 15;
         const BOOKING_DURATION_HOURS = 2;
-        
-        // Simplified Collection Path to reduce permission complexity
         const BOOKINGS_COLLECTION = "cabin_bookings";
 
-        const cabinCapacities = [4, 5, 6];
-        const initialCabins = Array.from({ length: CABIN_COUNT }, (_, i) => ({
-            id: `C${i + 1}`,
-            name: `Cabin ${i + 1}`,
-            capacity: cabinCapacities[i % 3],
-        }));
+        // UPDATED: Specific Cabin Capacities
+        const initialCabins = Array.from({ length: CABIN_COUNT }, (_, i) => {
+            const num = i + 1;
+            let capacity = 4; // Default for "all others"
+            
+            // "cabin 1 and 2 has 6 member capacity"
+            if (num === 1 || num === 2) {
+                capacity = 6;
+            } 
+            // "2=5,6 has 5 members" (Assuming Cabins 5 and 6)
+            else if (num === 5 || num === 6) {
+                capacity = 5;
+            }
+            
+            return {
+                id: `C${num}`,
+                name: `Cabin ${num}`,
+                capacity: capacity,
+            };
+        });
 
         // --- Helper Functions ---
 
@@ -145,7 +193,7 @@
                     status: 'Occupied', 
                     name: activeBooking.requesterName, 
                     endTime: activeBooking.timestamp.getTime() + BOOKING_DURATION_HOURS * 60 * 60 * 1000,
-                    role: activeBooking.role // Fixed ReferenceError: changed b.role to activeBooking.role
+                    role: activeBooking.role || 'student' 
                 };
             }
 
@@ -155,7 +203,7 @@
             );
 
             if (pendingBooking) {
-                return { status: 'Pending Approval', name: pendingBooking.requesterName, role: pendingBooking.role };
+                return { status: 'Pending Approval', name: pendingBooking.requesterName, role: pendingBooking.role || 'student' };
             }
 
             return { status: 'Available', name: null };
@@ -178,7 +226,6 @@
                         <h3 className="text-2xl font-bold text-slate-800 mb-3">{modal.title}</h3>
                         <p className="text-slate-600 mb-8 leading-relaxed">{modal.message}</p>
                         
-                        {/* Render Input if provided in modal props */}
                         {modal.inputProps && (
                             <div className="mb-6">
                                 <input 
@@ -213,10 +260,9 @@
             const [isAuthReady, setIsAuthReady] = useState(false);
             const [userId, setUserId] = useState(null);
             
-            // Core State: Demo Mode
             const [isDemoMode, setIsDemoMode] = useState(false);
+            const [isLoading, setIsLoading] = useState(true); 
 
-            // Separate states, but populated from one source
             const [studentBookings, setStudentBookings] = useState([]);
             const [facultyBookings, setFacultyBookings] = useState([]);
             
@@ -226,34 +272,51 @@
             const [selectedCapacity, setSelectedCapacity] = useState(0);
             const [groupMembers, setGroupMembers] = useState([]);
             
-            // UI States
-            const [bookingRole, setBookingRole] = useState('student'); // 'student' | 'faculty'
+            const [bookingRole, setBookingRole] = useState('student');
             const [isSpecialRequest, setIsSpecialRequest] = useState(false);
             const [specialReason, setSpecialReason] = useState('Interview');
             const [specialSize, setSpecialSize] = useState(1);
             const [specialComment, setSpecialComment] = useState('');
             
-            // Admin View State
             const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-            const [adminPasswordInput, setAdminPasswordInput] = useState('');
-            const [adminViewRole, setAdminViewRole] = useState('student'); // 'student' | 'faculty'
+            const [adminViewRole, setAdminViewRole] = useState('student');
             
             const [capacityFilter, setCapacityFilter] = useState(''); 
 
             const [modal, setModal] = useState(null);
             const [alertUser, AlertComponent] = useAlert();
 
-            // Merge bookings for occupancy checking
             const allBookings = useMemo(() => {
                 return [...studentBookings, ...facultyBookings];
             }, [studentBookings, facultyBookings]);
 
-            // Init Effect
+            const setDemoModeActive = useCallback((reason = "") => {
+                console.log("Switching to Demo Mode:", reason);
+                setIsDemoMode(true);
+                setUserId("demo-user-123");
+                setIsAuthReady(true);
+                
+                const mockStudent = {
+                    id: 'mock-1', cabinId: 'C1', status: 'Approved', requesterId: 'other', requesterName: 'Alice', groupMembers: ['Alice', 'Bob'], timestamp: new Date(), durationHours: 2, capacity: 6, role: 'student'
+                };
+                const mockFaculty = {
+                    id: 'mock-2', cabinId: 'C5', status: 'Pending', requesterId: 'prof', requesterName: 'Dr. Smith', groupMembers: ['Dr. Smith'], timestamp: new Date(), durationHours: 2, capacity: 5, role: 'faculty'
+                };
+                setStudentBookings([mockStudent]);
+                setFacultyBookings([mockFaculty]);
+                setIsLoading(false); 
+                
+                if (reason) {
+                    alertUser(React.createElement("div", { className: "flex items-center" }, 
+                        React.createElement(WifiOff, { className: "w-5 h-5 mr-2" }), 
+                        React.createElement("span", null, reason)
+                    ), "bg-slate-700 text-white");
+                }
+            }, [alertUser]);
+
             useEffect(() => {
-                // Initial check - if no config, default to demo immediately
                 if (!firebaseConfig) {
-                    console.warn("No Firebase Config found. Defaulting to Demo.");
-                    setDemoModeActive();
+                    setDemoModeActive("Local Mode (No Config)");
                     return;
                 }
 
@@ -267,7 +330,7 @@
                     const initAuth = async () => { await signInAnonymously(auther); };
                     
                     initAuth().catch(error => { 
-                        console.error("Auth failed:", error); 
+                        console.warn("Auth failed, switching to demo:", error); 
                         setDemoModeActive("Auth failed. Switched to Offline Mode.");
                     });
 
@@ -275,39 +338,19 @@
                         if (user) {
                             setUserId(user.uid);
                             setIsAuthReady(true);
+                            setIsLoading(false); 
                         }
                     });
                     return () => unsubscribe();
                 } catch (err) { 
-                    console.error("Firebase Init Error:", err);
+                    console.error("Init Error:", err);
                     setDemoModeActive("Config Error. Switched to Offline Mode.");
                 }
-            }, []);
+            }, [setDemoModeActive]);
 
-            // Helper to activate demo mode with data
-            const setDemoModeActive = (reason = "") => {
-                setIsDemoMode(true);
-                setUserId("demo-user-123");
-                setIsAuthReady(true);
-                // Seed some mock data
-                const mockStudent = {
-                    id: 'mock-1', cabinId: 'C1', status: 'Approved', requesterId: 'other', requesterName: 'Alice', groupMembers: ['Alice', 'Bob'], timestamp: new Date(), durationHours: 2, capacity: 4, role: 'student'
-                };
-                const mockFaculty = {
-                    id: 'mock-2', cabinId: 'C5', status: 'Pending', requesterId: 'prof', requesterName: 'Dr. Smith', groupMembers: ['Dr. Smith'], timestamp: new Date(), durationHours: 2, capacity: 5, role: 'faculty'
-                };
-                setStudentBookings([mockStudent]);
-                setFacultyBookings([mockFaculty]);
-                
-                if (reason) {
-                    alertUser(<><WifiOff className="w-5 h-5"/> <span>{reason}</span></>, "bg-slate-700 text-white");
-                }
-            };
-
-            // Single Realtime Listener for BOOKINGS_COLLECTION
+            // Database Listener
             useEffect(() => {
                 if (isDemoMode) {
-                    // In demo mode, recalculate user booking from local state
                     const current = allBookings.find(b => b.requesterId === userId && b.status !== 'Completed' && b.status !== 'Rejected' && !b.completionTime);
                     setUserBooking(current);
                     return;
@@ -315,8 +358,8 @@
 
                 if (!db || !isAuthReady || !userId) return;
 
-                // Listen to the ONE allowed collection
-                const unsub = onSnapshot(query(collection(db, BOOKINGS_COLLECTION)), (snapshot) => {
+                const q = query(collection(db, BOOKINGS_COLLECTION));
+                const unsub = onSnapshot(q, (snapshot) => {
                     const students = [];
                     const faculty = [];
                     
@@ -324,35 +367,31 @@
                         const data = doc.data();
                         const b = { id: doc.id, ...data };
                         
-                        // Safety check for timestamps
                         if (b.timestamp?.toDate) b.timestamp = b.timestamp.toDate();
                         if (b.completionTime?.toDate) b.completionTime = b.completionTime.toDate();
                         
-                        // Sort into memory buckets
                         if (b.role === 'faculty') {
                             faculty.push(b);
                         } else {
-                            // Default to student if role missing
                             students.push({ ...b, role: 'student' });
                         }
                     });
                     
                     setStudentBookings(students);
                     setFacultyBookings(faculty);
+                    setIsLoading(false); 
                 }, (error) => {
-                    console.error("Error fetching bookings:", error);
-                    // CRITICAL FIX: If permission denied, fallback gracefully to Demo Mode instead of crashing
                     if (error.code === 'permission-denied' || error.message.includes('permission') || error.message.includes('Missing or insufficient permissions')) {
-                        setDemoModeActive("Database locked. Switched to Offline Demo.");
+                        console.warn("Firebase Permission Denied. Falling back to Demo Mode.");
+                        setDemoModeActive("Database Locked (Rules). Switched to Demo.");
                     } else {
-                        alertUser("Connection Error", "bg-red-500 text-white");
+                        console.error("Firestore Error:", error);
                     }
                 });
 
                 return () => unsub();
-            }, [db, isAuthReady, userId, isDemoMode]);
+            }, [db, isAuthReady, userId, isDemoMode, setDemoModeActive]);
 
-            // Update user booking when data changes
             useEffect(() => {
                 if (!isDemoMode && allBookings.length > 0) {
                     const current = allBookings.find(b => 
@@ -365,9 +404,7 @@
                 }
             }, [allBookings, userId, isDemoMode]);
 
-
-            // --- Logic ---
-
+            // Logic
             const selectCabin = useCallback((cabinId, capacity) => {
                 setSelectedCabinId(cabinId);
                 setSelectedCapacity(capacity);
@@ -384,7 +421,7 @@
 
             const submitBooking = useCallback(async () => {
                 if (!isAuthReady || userBooking) {
-                    alertUser(<><AlertTriangle className="w-5 h-5"/> <span>Active request exists.</span></>, 'bg-amber-500 text-slate-900 border-amber-400/20');
+                    alertUser(React.createElement("div", {className: "flex items-center"}, React.createElement(AlertTriangle, {className:"w-5 h-5 mr-2"}), "Active request exists."), 'bg-amber-500 text-slate-900 border-amber-400/20');
                     return;
                 }
                 if (!selectedCabinId) return;
@@ -395,7 +432,6 @@
                      return;
                 }
 
-                // Check global availability (collision check across both DBs)
                 if (getCabinStatus(selectedCabinId, allBookings).status !== 'Available') {
                     alertUser("Cabin taken!", "bg-red-500 text-white");
                     return;
@@ -415,7 +451,7 @@
                     bookingType: isSpecialRequest ? 'Special' : 'Standard',
                     specialReason: isSpecialRequest ? specialReason : null,
                     specialComment: isSpecialRequest ? specialComment : null,
-                    role: bookingRole // Explicitly store who booked it
+                    role: bookingRole
                 };
 
                 if (isDemoMode) {
@@ -423,13 +459,11 @@
                     if (bookingRole === 'student') setStudentBookings(p => [...p, mock]);
                     else setFacultyBookings(p => [...p, mock]);
                     alertUser("Submitted (Demo)", "bg-emerald-500 text-white");
-                    // Reset Form
                     setSelectedCabinId('');
                     return;
                 }
                 
                 try {
-                    // Always write to the SINGLE allowed collection
                     await addDoc(collection(db, BOOKINGS_COLLECTION), newBookingData);
                     setSelectedCabinId('');
                     alertUser("Request Submitted!", "bg-emerald-500 text-white");
@@ -441,7 +475,7 @@
                         alertUser("Submission Failed", "bg-red-500 text-white");
                     }
                 }
-            }, [isAuthReady, userBooking, selectedCabinId, groupMembers, allBookings, userId, bookingRole, isSpecialRequest, specialSize, specialReason, specialComment, db, isDemoMode]);
+            }, [isAuthReady, userBooking, selectedCabinId, groupMembers, allBookings, userId, bookingRole, isSpecialRequest, specialSize, specialReason, specialComment, db, isDemoMode, setDemoModeActive]);
 
             const cancelBooking = useCallback(async () => {
                 if (!userBooking) return;
@@ -478,7 +512,6 @@
                 } catch (error) { console.error(error); }
             }, [userBooking, db, isDemoMode]);
 
-            // Admin Actions
             const performAdminLogin = (password) => {
                 if (password === 'admin123') {
                     setIsAdminLoggedIn(true);
@@ -488,7 +521,6 @@
                 }
             };
             
-            // Password Ref to capture input inside Modal
             const passwordRef = useRef('');
             
             const handleLoginClick = () => {
@@ -525,8 +557,6 @@
                 } catch (error) { console.error(error); }
             }, [db, isDemoMode]);
 
-            // --- Render Helpers ---
-
             const useCountdown = (booking) => {
                 const [time, setTime] = useState(null);
                 useEffect(() => {
@@ -546,8 +576,6 @@
                 return { remainingTime: time };
             };
 
-            // --- Views ---
-
             const filteredCabins = useMemo(() => {
                 let list = initialCabins;
                 if (capacityFilter) list = list.filter(c => c.capacity === parseInt(capacityFilter));
@@ -559,7 +587,6 @@
                 const isAvailable = statusInfo.status === 'Available';
                 const isSelected = selectedCabinId === cabin.id;
                 
-                // Color coding based on who occupies it
                 let roleBadge = null;
                 if (statusInfo.role === 'student') roleBadge = <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 rounded border border-blue-200">Student</span>;
                 if (statusInfo.role === 'faculty') roleBadge = <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 rounded border border-orange-200">Faculty</span>;
@@ -614,8 +641,10 @@
                         </div>
                         <div className="flex gap-2">
                             {b.status === 'Pending' ? (
-                                <><button onClick={() => updateBookingStatus(b, 'Approved')} className="py-2 px-4 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-sm font-bold hover:bg-emerald-100">Approve</button>
-                                  <button onClick={() => updateBookingStatus(b, 'Rejected')} className="py-2 px-4 bg-red-50 text-red-700 border border-red-100 rounded-lg text-sm font-bold hover:bg-red-100">Reject</button></>
+                                <React.Fragment>
+                                    <button onClick={() => updateBookingStatus(b, 'Approved')} className="py-2 px-4 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-sm font-bold hover:bg-emerald-100">Approve</button>
+                                    <button onClick={() => updateBookingStatus(b, 'Rejected')} className="py-2 px-4 bg-red-50 text-red-700 border border-red-100 rounded-lg text-sm font-bold hover:bg-red-100">Reject</button>
+                                </React.Fragment>
                             ) : (
                                 <button onClick={() => updateBookingStatus(b, 'Completed')} className="py-2 px-4 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-200">End</button>
                             )}
@@ -624,7 +653,18 @@
                 ));
             }, [studentBookings, facultyBookings, adminViewRole, updateBookingStatus]);
 
-            // --- Main Render ---
+            if (isLoading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+                        <div className="text-center">
+                            <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mx-auto mb-4"/>
+                            <h2 className="text-xl font-bold text-slate-700">Connecting to System...</h2>
+                            <p className="text-slate-500">Checking permissions & loading data</p>
+                        </div>
+                    </div>
+                );
+            }
+
             return (
                 <div className="min-h-screen pb-20">
                     <AlertComponent />
@@ -639,7 +679,6 @@
                             <div className="flex items-center gap-4">
                                 {isDemoMode && <div className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-1 rounded border border-slate-300">OFFLINE MODE</div>}
                                 
-                                {/* Librarian Login Button */}
                                 {!isAdminLoggedIn ? (
                                     <button onClick={handleLoginClick} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors">
                                         <Lock className="w-3 h-3"/> Librarian
@@ -659,7 +698,6 @@
                     </header>
 
                     <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-12">
-                        {/* Status Card */}
                         <section className="animate-enter">
                             {userBooking ? (
                                 <div className="relative overflow-hidden bg-white rounded-3xl shadow-xl border border-slate-100 p-8">
@@ -691,7 +729,6 @@
                             )}
                         </section>
 
-                        {/* Available Spaces */}
                         <section className="animate-enter" style={{animationDelay: '0.1s'}}>
                             <div className="flex justify-between items-center mb-6">
                                 <h2 className="text-2xl font-bold text-slate-800">Available Spaces</h2>
@@ -705,13 +742,11 @@
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">{CabinGrid}</div>
                         </section>
 
-                        {/* Booking Form */}
                         {selectedCabinId && !userBooking && (
                             <section id="booking-form-anchor" className="animate-enter">
                                 <div className="glass-panel p-8 rounded-3xl shadow-xl max-w-2xl mx-auto border-l-4 border-indigo-600">
                                     <h2 className="text-2xl font-bold text-slate-900 mb-6">Booking Details for {selectedCabinId}</h2>
                                     
-                                    {/* Role Selector */}
                                     <div className="mb-6">
                                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">I am booking as:</label>
                                         <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -720,7 +755,6 @@
                                         </div>
                                     </div>
 
-                                    {/* Type Selector */}
                                     <div className="flex gap-4 mb-6 text-sm">
                                         <label className="flex items-center cursor-pointer">
                                             <input type="radio" checked={!isSpecialRequest} onChange={() => { setIsSpecialRequest(false); setGroupMembers(new Array(selectedCapacity).fill('')); }} className="mr-2 accent-indigo-600"/>
@@ -732,7 +766,6 @@
                                         </label>
                                     </div>
 
-                                    {/* Special Logic */}
                                     {isSpecialRequest && (
                                         <div className="mb-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
                                             <div className="grid grid-cols-2 gap-4 mb-3">
@@ -753,7 +786,6 @@
                                         </div>
                                     )}
 
-                                    {/* Member Inputs */}
                                     <div className="space-y-3 mb-8">
                                         {groupMembers.map((name, i) => (
                                             <input key={i} type="text" value={name} onChange={(e) => { const n = [...groupMembers]; n[i] = e.target.value; setGroupMembers(n); }} placeholder={`Member ${i+1} Name`} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"/>
@@ -767,7 +799,6 @@
                             </section>
                         )}
 
-                        {/* Admin Queue (Protected) */}
                         <section className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm animate-enter" style={{animationDelay: '0.2s'}}>
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-xl font-bold text-slate-800 flex items-center">
@@ -783,7 +814,6 @@
                                 )}
                             </div>
 
-                            {/* Conditional Admin View */}
                             {isAdminLoggedIn ? (
                                 <div className="space-y-3">{AdminQueue}</div>
                             ) : (
@@ -806,7 +836,11 @@
         };
 
         const root = createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
+        );
     </script>
 </body>
 </html>

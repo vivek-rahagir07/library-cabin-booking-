@@ -67,7 +67,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useCallback, useMemo } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, Calendar } from 'https://esm.sh/lucide-react@0.263.1';
+        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, GraduationCap, LayoutDashboard, Lock, Unlock, ShieldCheck } from 'https://esm.sh/lucide-react@0.263.1';
         
         // Firebase Imports (Stable Version)
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
@@ -78,7 +78,7 @@
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        // UPDATED: User's Firebase Configuration
+        // User's Firebase Configuration
         const firebaseConfig = {
           apiKey: "AIzaSyCHimNRSSB4ZoqLCu5Okq4yL0i85EMzUIU",
           authDomain: "library-booking-83e2a.firebaseapp.com",
@@ -94,6 +94,8 @@
 
         const CABIN_COUNT = 15;
         const BOOKING_DURATION_HOURS = 2;
+        
+        // Unified Collection to fix Permission Error, but we filter logic separately
         const BOOKINGS_COLLECTION = `artifacts/${appId}/public/data/cabinBookings`;
 
         const cabinCapacities = [4, 5, 6];
@@ -145,7 +147,8 @@
                 return { 
                     status: 'Occupied', 
                     name: activeBooking.requesterName, 
-                    endTime: activeBooking.timestamp.getTime() + BOOKING_DURATION_HOURS * 60 * 60 * 1000 
+                    endTime: activeBooking.timestamp.getTime() + BOOKING_DURATION_HOURS * 60 * 60 * 1000,
+                    role: b.role // Track who occupied it
                 };
             }
 
@@ -155,7 +158,7 @@
             );
 
             if (pendingBooking) {
-                return { status: 'Pending Approval', name: pendingBooking.requesterName };
+                return { status: 'Pending Approval', name: pendingBooking.requesterName, role: pendingBooking.role };
             }
 
             return { status: 'Available', name: null };
@@ -177,6 +180,17 @@
                     <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md border border-slate-100 animate-enter">
                         <h3 className="text-2xl font-bold text-slate-800 mb-3">{modal.title}</h3>
                         <p className="text-slate-600 mb-8 leading-relaxed">{modal.message}</p>
+                        
+                        {/* Render Input if provided in modal props */}
+                        {modal.inputProps && (
+                            <div className="mb-6">
+                                <input 
+                                    {...modal.inputProps}
+                                    className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                />
+                            </div>
+                        )}
+
                         <div className="flex justify-end space-x-3">
                             <button 
                                 onClick={closeModal} 
@@ -202,57 +216,47 @@
             const [isAuthReady, setIsAuthReady] = useState(false);
             const [userId, setUserId] = useState(null);
 
-            const [allBookings, setAllBookings] = useState([]);
+            // Separate states, but populated from one source
+            const [studentBookings, setStudentBookings] = useState([]);
+            const [facultyBookings, setFacultyBookings] = useState([]);
+            
             const [userBooking, setUserBooking] = useState(null);
             
             const [selectedCabinId, setSelectedCabinId] = useState('');
             const [selectedCapacity, setSelectedCapacity] = useState(0);
             const [groupMembers, setGroupMembers] = useState([]);
             
-            // New States for Special Request
+            // UI States
+            const [bookingRole, setBookingRole] = useState('student'); // 'student' | 'faculty'
             const [isSpecialRequest, setIsSpecialRequest] = useState(false);
             const [specialReason, setSpecialReason] = useState('Interview');
             const [specialSize, setSpecialSize] = useState(1);
             const [specialComment, setSpecialComment] = useState('');
+            
+            // Admin View State
+            const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+            const [adminPasswordInput, setAdminPasswordInput] = useState('');
+            const [adminViewRole, setAdminViewRole] = useState('student'); // 'student' | 'faculty'
             
             const [capacityFilter, setCapacityFilter] = useState(''); 
 
             const [modal, setModal] = useState(null);
             const [alertUser, AlertComponent] = useAlert();
 
+            // Merge bookings for occupancy checking
+            const allBookings = useMemo(() => {
+                return [...studentBookings, ...facultyBookings];
+            }, [studentBookings, facultyBookings]);
+
             // Init Effect
             useEffect(() => {
                 if (isDemoMode) {
-                    console.warn("Running in Demo Mode: No Firebase Config found.");
+                    console.warn("Running in Demo Mode");
                     setUserId("demo-user-123");
                     setIsAuthReady(true);
-                    
-                    setAllBookings([
-                        {
-                            id: 'mock-1',
-                            cabinId: 'C1',
-                            status: 'Approved',
-                            requesterId: 'other-user',
-                            requesterName: 'Alice Johnson',
-                            groupMembers: ['Alice Johnson', 'Bob Smith'],
-                            timestamp: new Date(Date.now() - 30 * 60 * 1000), 
-                            durationHours: 2,
-                            capacity: 4
-                        },
-                        {
-                            id: 'mock-2',
-                            cabinId: 'C5',
-                            status: 'Pending',
-                            requesterId: 'other-user-2',
-                            requesterName: 'Charlie Brown',
-                            groupMembers: ['Charlie Brown', 'Lucy'],
-                            timestamp: new Date(),
-                            durationHours: 2,
-                            capacity: 5
-                        }
-                    ]);
-                    
-                    alertUser(<><Info className="w-5 h-5"/> <span>Demo Mode Active (Local Data)</span></>, 'bg-blue-600 text-white');
+                    setStudentBookings([{
+                        id: 'mock-1', cabinId: 'C1', status: 'Approved', requesterId: 'other', requesterName: 'Alice', groupMembers: ['Alice', 'Bob'], timestamp: new Date(), durationHours: 2, capacity: 4, role: 'student'
+                    }]);
                     return;
                 }
 
@@ -260,19 +264,11 @@
                     const app = initializeApp(firebaseConfig);
                     const firestore = getFirestore(app);
                     const auther = getAuth(app);
-                    
                     setDb(firestore);
                     setAuth(auther);
 
-                    const initAuth = async () => {
-                        // Use only anonymous auth when custom config is provided
-                        await signInAnonymously(auther);
-                    };
-
-                    initAuth().catch(error => {
-                        console.error("Auth failed:", error);
-                        alertUser(<><XCircle className="w-5 h-5"/> <span>Auth failed. Refresh page.</span></>, 'bg-red-600 text-white');
-                    });
+                    const initAuth = async () => { await signInAnonymously(auther); };
+                    initAuth().catch(error => { console.error("Auth failed:", error); alertUser("Auth failed", "bg-red-500 text-white"); });
 
                     const unsubscribe = onAuthStateChanged(auther, (user) => {
                         if (user) {
@@ -280,762 +276,470 @@
                             setIsAuthReady(true);
                         }
                     });
-
                     return () => unsubscribe();
-                } catch (err) {
-                    console.error("Firebase init failed:", err);
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>App Initialization Failed</span></>, 'bg-red-600 text-white');
-                }
+                } catch (err) { console.error(err); }
             }, [alertUser]);
 
-            // Realtime Listener / Demo Data
+            // Single Realtime Listener for BOOKINGS_COLLECTION
             useEffect(() => {
                 if (isDemoMode) {
-                    const currentBooking = allBookings.find(b => 
-                        b.requesterId === userId && 
-                        b.status !== 'Completed' && 
-                        b.status !== 'Rejected' && 
-                        !b.completionTime
-                    );
-                    setUserBooking(currentBooking);
+                    const current = allBookings.find(b => b.requesterId === userId && b.status !== 'Completed' && b.status !== 'Rejected' && !b.completionTime);
+                    setUserBooking(current);
                     return;
                 }
 
                 if (!db || !isAuthReady || !userId) return;
 
-                const q = query(collection(db, BOOKINGS_COLLECTION));
-                
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    const bookings = [];
+                // Listen to the ONE allowed collection
+                const unsub = onSnapshot(query(collection(db, BOOKINGS_COLLECTION)), (snapshot) => {
+                    const students = [];
+                    const faculty = [];
+                    
                     snapshot.forEach(doc => {
                         const data = doc.data();
-                        const booking = { id: doc.id, ...data };
+                        const b = { id: doc.id, ...data };
                         
-                        if (booking.timestamp && typeof booking.timestamp.toDate === 'function') {
-                            booking.timestamp = booking.timestamp.toDate();
+                        // Safety check for timestamps
+                        if (b.timestamp?.toDate) b.timestamp = b.timestamp.toDate();
+                        if (b.completionTime?.toDate) b.completionTime = b.completionTime.toDate();
+                        
+                        // Sort into memory buckets
+                        if (b.role === 'faculty') {
+                            faculty.push(b);
+                        } else {
+                            // Default to student if role missing
+                            students.push({ ...b, role: 'student' });
                         }
-                        if (booking.completionTime && typeof booking.completionTime.toDate === 'function') {
-                            booking.completionTime = booking.completionTime.toDate();
-                        }
-                        bookings.push(booking);
                     });
                     
-                    setAllBookings(bookings);
-                    
-                    const currentBooking = bookings.find(b => 
-                        b.requesterId === userId && 
-                        b.status !== 'Completed' && 
-                        b.status !== 'Rejected' && 
-                        !b.completionTime
-                    );
-                    setUserBooking(currentBooking);
-
+                    setStudentBookings(students);
+                    setFacultyBookings(faculty);
                 }, (error) => {
                     console.error("Error fetching bookings:", error);
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>Connection error. Retrying...</span></>, 'bg-red-600 text-white');
+                    // This error typically means rules denial
+                    alertUser(<span>Access Denied. Check Firebase Rules.</span>, "bg-red-600 text-white");
                 });
 
-                return () => unsubscribe();
-            }, [db, isAuthReady, userId, alertUser, isDemoMode, allBookings]);
+                return () => unsub();
+            }, [db, isAuthReady, userId]);
 
-            // Logic
+            // Determine User Booking from merged list
+            useEffect(() => {
+                const current = allBookings.find(b => 
+                    b.requesterId === userId && 
+                    b.status !== 'Completed' && 
+                    b.status !== 'Rejected' && 
+                    !b.completionTime
+                );
+                setUserBooking(current);
+            }, [allBookings, userId]);
+
+
+            // --- Logic ---
+
             const selectCabin = useCallback((cabinId, capacity) => {
                 setSelectedCabinId(cabinId);
                 setSelectedCapacity(capacity);
-                // Reset to standard mode when selecting new cabin
                 setIsSpecialRequest(false);
                 setSpecialSize(1);
                 setSpecialComment('');
                 setGroupMembers(new Array(capacity).fill(''));
                 
-                // Smooth scroll
                 const formElement = document.getElementById('booking-form-anchor');
                 if (formElement) {
-                    const yOffset = -120; // Offset for sticky header
-                    const y = formElement.getBoundingClientRect().top + window.pageYOffset + yOffset;
-                    window.scrollTo({top: y, behavior: 'smooth'});
+                    window.scrollTo({top: formElement.getBoundingClientRect().top + window.pageYOffset - 120, behavior: 'smooth'});
                 }
             }, []);
 
-            // Handle Tab Switching
-            const handleModeSwitch = (mode) => {
-                const isSpecial = mode === 'special';
-                setIsSpecialRequest(isSpecial);
-                if (isSpecial) {
-                    setSpecialSize(1);
-                    setSpecialComment('');
-                    setGroupMembers(['']);
-                } else {
-                    setGroupMembers(new Array(selectedCapacity).fill(''));
-                }
-            };
-
-            const handleSpecialSizeChange = (e) => {
-                const size = parseInt(e.target.value);
-                setSpecialSize(size);
-                // Preserve existing name if shrinking, or add empty if growing
-                setGroupMembers(prev => {
-                    const newArr = new Array(size).fill('');
-                    for(let i=0; i<Math.min(prev.length, size); i++) newArr[i] = prev[i];
-                    return newArr;
-                });
-            };
-
             const submitBooking = useCallback(async () => {
                 if (!isAuthReady || userBooking) {
-                    alertUser(<><AlertTriangle className="w-5 h-5"/> <span>Active request exists. Wait for completion.</span></>, 'bg-amber-500 text-slate-900 border-amber-400/20');
+                    alertUser(<><AlertTriangle className="w-5 h-5"/> <span>Active request exists.</span></>, 'bg-amber-500 text-slate-900 border-amber-400/20');
                     return;
                 }
+                if (!selectedCabinId) return;
 
-                if (!selectedCabinId || selectedCapacity === 0) {
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>Please select a cabin.</span></>, 'bg-red-500 text-white border-red-400/20');
-                    return;
-                }
-                
-                const filledMembers = (groupMembers || []).map(name => (name || '').trim());
-                
-                if (filledMembers.length === 0 || filledMembers.some(name => !name)) {
-                     alertUser(<><XCircle className="w-5 h-5"/> <span>All member names are required.</span></>, 'bg-red-500 text-white border-red-400/20');
+                const filledMembers = groupMembers.map(n => n.trim());
+                if (filledMembers.some(n => !n)) {
+                     alertUser("All names required", "bg-red-500 text-white");
                      return;
                 }
 
+                // Check global availability (collision check across both DBs)
                 if (getCabinStatus(selectedCabinId, allBookings).status !== 'Available') {
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>Cabin taken! Please select another.</span></>, 'bg-red-500 text-white border-red-400/20');
+                    alertUser("Cabin taken!", "bg-red-500 text-white");
                     return;
                 }
                 
                 const newBookingData = {
                     cabinId: selectedCabinId,
-                    // Use special size if in special mode, otherwise full capacity
                     capacity: isSpecialRequest ? specialSize : selectedCapacity,
                     requesterName: filledMembers[0],
                     requesterId: userId,
                     groupMembers: filledMembers,
-                    timestamp: isDemoMode ? new Date() : Timestamp.now(),
+                    timestamp: Timestamp.now(),
                     durationHours: BOOKING_DURATION_HOURS,
                     status: 'Pending',
                     approvedBy: null,
                     completionTime: null,
-                    exportTimestamp: new Date().toISOString(),
-                    // Add Special Request Metadata
                     bookingType: isSpecialRequest ? 'Special' : 'Standard',
                     specialReason: isSpecialRequest ? specialReason : null,
-                    specialComment: isSpecialRequest ? specialComment : null
+                    specialComment: isSpecialRequest ? specialComment : null,
+                    role: bookingRole // Explicitly store who booked it
                 };
 
                 if (isDemoMode) {
-                    setAllBookings(prev => [...prev, { ...newBookingData, id: `demo-${Date.now()}` }]);
-                    setSelectedCabinId('');
-                    setSelectedCapacity(0);
-                    setGroupMembers([]);
-                    setIsSpecialRequest(false);
-                    setSpecialComment('');
-                    alertUser(<><CheckCircle className="w-5 h-5"/> <span>Request submitted (Demo)!</span></>, 'bg-emerald-500 text-white border-emerald-400/20');
+                    const mock = { ...newBookingData, id: `demo-${Date.now()}`, timestamp: new Date() };
+                    if (bookingRole === 'student') setStudentBookings(p => [...p, mock]);
+                    else setFacultyBookings(p => [...p, mock]);
+                    alertUser("Submitted (Demo)", "bg-emerald-500 text-white");
                     return;
                 }
                 
                 try {
+                    // Always write to the SINGLE allowed collection
                     await addDoc(collection(db, BOOKINGS_COLLECTION), newBookingData);
-                    
                     setSelectedCabinId('');
-                    setSelectedCapacity(0);
-                    setGroupMembers([]);
-                    setIsSpecialRequest(false);
-                    setSpecialComment('');
-
-                    alertUser(<><CheckCircle className="w-5 h-5"/> <span>Request submitted for approval!</span></>, 'bg-emerald-500 text-white border-emerald-400/20');
+                    alertUser("Request Submitted!", "bg-emerald-500 text-white");
                 } catch (error) {
-                    console.error("Submission error:", error);
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>Submission failed.</span></>, 'bg-red-500 text-white border-red-400/20');
+                    console.error(error);
+                    alertUser("Submission Failed", "bg-red-500 text-white");
                 }
-            }, [isAuthReady, userBooking, selectedCabinId, selectedCapacity, groupMembers, allBookings, alertUser, db, userId, isSpecialRequest, specialSize, specialReason, specialComment]);
+            }, [isAuthReady, userBooking, selectedCabinId, groupMembers, allBookings, userId, bookingRole, isSpecialRequest, specialSize, specialReason, specialComment, db]);
 
             const cancelBooking = useCallback(async () => {
-                if (!userBooking) return;
-                
-                if (isDemoMode) {
-                    setAllBookings(prev => prev.filter(b => b.id !== userBooking.id));
-                    alertUser(<><LogOut className="w-5 h-5"/> <span>Request cancelled (Demo).</span></>, 'bg-sky-500 text-white border-sky-400/20');
-                    return;
-                }
-
-                if (!db) return;
+                if (!userBooking || !db) return;
                 try {
+                    // Always use BOOKINGS_COLLECTION
                     await deleteDoc(doc(db, BOOKINGS_COLLECTION, userBooking.id));
-                    alertUser(<><LogOut className="w-5 h-5"/> <span>Request cancelled.</span></>, 'bg-sky-500 text-white border-sky-400/20');
-                } catch (error) {
-                    console.error("Cancel error:", error);
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>Error cancelling request.</span></>, 'bg-red-500 text-white border-red-400/20');
-                }
-            }, [userBooking, alertUser, db]);
+                    alertUser("Cancelled", "bg-sky-500 text-white");
+                } catch (error) { console.error(error); }
+            }, [userBooking, db]);
             
-            const completeBookingEarly = useCallback(async () => {
-                if (!userBooking || userBooking.status !== 'Approved') return;
-                
-                if (isDemoMode) {
-                    setAllBookings(prev => prev.map(b => b.id === userBooking.id ? { ...b, status: 'Completed', completionTime: new Date() } : b));
-                    alertUser(<><CheckCircle className="w-5 h-5"/> <span>Checked out (Demo).</span></>, 'bg-emerald-500 text-white border-emerald-400/20');
-                    return;
-                }
+            const completeBooking = useCallback(async () => {
+                if (!userBooking || !db) return;
+                try {
+                    await updateDoc(doc(db, BOOKINGS_COLLECTION, userBooking.id), { status: 'Completed', completionTime: Timestamp.now() });
+                    alertUser("Checked Out", "bg-emerald-500 text-white");
+                } catch (error) { console.error(error); }
+            }, [userBooking, db]);
 
+            // Admin Actions
+            const performAdminLogin = (password) => {
+                if (password === 'admin123') {
+                    setIsAdminLoggedIn(true);
+                    alertUser("Librarian Access Granted", "bg-emerald-500 text-white");
+                } else {
+                    alertUser("Invalid Password", "bg-red-500 text-white");
+                }
+            };
+            
+            // Re-bind action to current state in render or ensure state is accessible. 
+            // Since `adminPasswordInput` is state, we need to ensure the closure captures the *current* value when 'Login' is clicked. 
+            // Ideally, we'd use a ref for the input value to avoid closure staleness in the 'action' callback defined at render time.
+            const passwordRef = React.useRef('');
+            
+            const handleLoginClick = () => {
+                passwordRef.current = ''; // Reset
+                setModal({
+                    title: "Librarian Login",
+                    message: "Enter password to manage requests.",
+                    confirmText: "Access Panel",
+                    confirmClass: "bg-indigo-600",
+                    inputProps: {
+                        type: "password",
+                        placeholder: "Password",
+                        onChange: (e) => { passwordRef.current = e.target.value; }
+                    },
+                    action: () => performAdminLogin(passwordRef.current)
+                });
+            };
+
+            const updateBookingStatus = useCallback(async (booking, newStatus) => {
                 if (!db) return;
                 try {
-                    await updateDoc(doc(db, BOOKINGS_COLLECTION, userBooking.id), {
-                        status: 'Completed',
-                        completionTime: Timestamp.now(),
-                    });
-                    alertUser(<><CheckCircle className="w-5 h-5"/> <span>Checked out. Session complete.</span></>, 'bg-emerald-500 text-white border-emerald-400/20');
-                } catch (error) {
-                    console.error("Checkout error:", error);
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>Checkout failed.</span></>, 'bg-red-500 text-white border-red-400/20');
-                }
-            }, [userBooking, alertUser, db]);
+                    const updateData = { status: newStatus };
+                    if (newStatus === 'Approved') {
+                        updateData.approvedBy = 'Librarian';
+                        updateData.timestamp = Timestamp.now();
+                    }
+                    await updateDoc(doc(db, BOOKINGS_COLLECTION, booking.id), updateData);
+                } catch (error) { console.error(error); }
+            }, [db]);
 
-            const confirmCancelBooking = useCallback(() => {
-                setModal({
-                    title: "Terminate Request?",
-                    message: "This will permanently remove your booking request. You will need to start over.",
-                    confirmText: "Yes, Terminate",
-                    action: cancelBooking,
-                    confirmClass: "bg-red-600 hover:bg-red-700 shadow-red-600/20"
-                });
-            }, [cancelBooking]);
-            
-            const confirmCheckOut = useCallback(() => {
-                setModal({
-                    title: "End Session Early?",
-                    message: "This will free up the cabin for other groups immediately.",
-                    confirmText: "Yes, Check Out",
-                    action: completeBookingEarly,
-                    confirmClass: "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
-                });
-            }, [completeBookingEarly]);
-            
-            const updateBookingStatus = useCallback(async (bookingId, newStatus) => {
-                if (!isAuthReady) return;
-                
-                const facultyName = 'Faculty Admin';
-                
-                if (isDemoMode) {
-                     setAllBookings(prev => prev.map(b => {
-                        if (b.id === bookingId) {
-                            const updates = { status: newStatus };
-                            if (newStatus === 'Approved') {
-                                updates.approvedBy = facultyName;
-                                updates.timestamp = new Date();
-                            }
-                            return { ...b, ...updates };
-                        }
-                        return b;
-                     }));
-                     return;
-                }
-
-                if (!db) return;
-
-                const updateData = { status: newStatus };
-                if (newStatus === 'Approved') {
-                    updateData.approvedBy = facultyName;
-                    updateData.timestamp = Timestamp.now();
-                }
-
-                try {
-                    await updateDoc(doc(db, BOOKINGS_COLLECTION, bookingId), updateData);
-                } catch (error) {
-                    console.error("Update error:", error);
-                    alertUser(<><XCircle className="w-5 h-5"/> <span>Action failed.</span></>, 'bg-red-500 text-white');
-                }
-            }, [isAuthReady, db, alertUser]);
+            // --- Render Helpers ---
 
             const useCountdown = (booking) => {
-                const [remainingTime, setRemainingTime] = useState(null);
-                const [isCritical, setIsCritical] = useState(false);
-
+                const [time, setTime] = useState(null);
                 useEffect(() => {
-                    if (!booking || booking.status !== 'Approved' || booking.completionTime || !booking.timestamp) {
-                        setRemainingTime(null);
-                        return;
-                    }
-                    if (typeof booking.timestamp.getTime !== 'function') return;
-
-                    const updateTimer = () => {
-                        const startTime = booking.timestamp.getTime();
-                        const endTime = startTime + booking.durationHours * 60 * 60 * 1000;
-                        const now = new Date().getTime();
-                        const distance = endTime - now;
-
-                        if (distance < 0) {
-                            setRemainingTime('00:00:00');
-                            setIsCritical(false);
-                        } else {
-                            const minutesLeft = Math.floor(distance / (1000 * 60));
-                            setIsCritical(minutesLeft <= 5);
-
-                            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                            setRemainingTime(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+                    if (!booking || booking.status !== 'Approved' || !booking.timestamp) { setTime(null); return; }
+                    const interval = setInterval(() => {
+                        const end = booking.timestamp.getTime() + booking.durationHours * 3600000;
+                        const diff = end - new Date().getTime();
+                        if (diff < 0) setTime("00:00");
+                        else {
+                            const m = Math.floor(diff / 60000);
+                            const s = Math.floor((diff % 60000) / 1000);
+                            setTime(`${Math.floor(m/60)}:${m%60}:${s < 10 ? '0'+s : s}`);
                         }
-                    };
-
-                    updateTimer(); 
-                    const interval = setInterval(updateTimer, 1000);
+                    }, 1000);
                     return () => clearInterval(interval);
                 }, [booking]);
-
-                return { remainingTime, isCritical };
+                return { remainingTime: time };
             };
+
+            // --- Views ---
 
             const filteredCabins = useMemo(() => {
                 let list = initialCabins;
-                if (capacityFilter) {
-                    list = list.filter(c => c.capacity === parseInt(capacityFilter));
-                }
+                if (capacityFilter) list = list.filter(c => c.capacity === parseInt(capacityFilter));
                 return list;
             }, [capacityFilter]);
 
-            const CabinGrid = useMemo(() => {
-                return filteredCabins.map(cabin => {
-                    const statusInfo = getCabinStatus(cabin.id, allBookings);
-                    const isAvailable = statusInfo.status === 'Available';
-                    const isOccupied = statusInfo.status === 'Occupied';
-                    const isSelected = selectedCabinId === cabin.id;
-                    const isPending = statusInfo.status === 'Pending Approval';
-                    
-                    let borderColor, statusBadge;
-                    
-                    if (isAvailable) {
-                        borderColor = isSelected ? 'ring-2 ring-indigo-500 border-transparent bg-indigo-50/50' : 'border-slate-200 hover:border-indigo-300 hover:shadow-lg hover:-translate-y-1';
-                        statusBadge = <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></div>Available</span>;
-                    } else if (isPending) {
-                        borderColor = 'border-amber-200 bg-amber-50/30 opacity-80 cursor-not-allowed';
-                        statusBadge = <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700"><Clock className="w-3 h-3 mr-1"/>Pending</span>;
-                    } else {
-                        borderColor = 'border-red-100 bg-red-50/30 opacity-70 grayscale-[0.5] cursor-not-allowed';
-                        statusBadge = <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700"><XCircle className="w-3 h-3 mr-1"/>Occupied</span>;
-                    }
-
-                    const isDisabled = !isAvailable || !!userBooking;
-                    
-                    return (
-                        <div 
-                            key={cabin.id}
-                            className={`
-                                relative p-6 bg-white rounded-2xl shadow-sm transition-all duration-300 border
-                                ${borderColor} ${isSelected ? 'shadow-indigo-100 shadow-xl scale-[1.02]' : ''}
-                            `}
-                            onClick={!isDisabled ? () => selectCabin(cabin.id, cabin.capacity) : undefined}
-                        >
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <h3 className="text-xl font-bold text-slate-800">{cabin.name}</h3>
-                                    <div className="text-xs text-slate-500 mt-1 flex items-center">
-                                        <Users className="w-3 h-3 mr-1"/> {cabin.capacity} Seats
-                                    </div>
-                                </div>
-                                {statusBadge}
-                            </div>
-
-                            {statusInfo.name && (
-                                <div className="mt-2 text-xs bg-white/50 border border-slate-100 p-2 rounded-lg text-slate-600 truncate flex items-center">
-                                    <User className="w-3 h-3 mr-1.5 text-slate-400"/> {statusInfo.name}
-                                </div>
-                            )}
-                            
-                            <div className="mt-6 flex items-center justify-between">
-                                <span className={`text-xs font-semibold uppercase tracking-wider ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`}>
-                                    {isSelected ? 'Selected' : 'Tap to Select'}
-                                </span>
-                                {isSelected && <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>}
-                            </div>
-                        </div>
-                    );
-                });
-            }, [selectedCabinId, allBookings, userBooking, selectCabin, filteredCabins]);
-
-
-            const UserStatusCard = () => {
-                const { remainingTime, isCritical } = useCountdown(userBooking);
-
-                if (!userBooking) {
-                    return (
-                        <div className="glass-panel p-10 rounded-3xl text-center border-dashed border-2 border-slate-300">
-                            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-500">
-                                <BookOpen className="w-8 h-8"/>
-                            </div>
-                            <h3 className="text-xl font-bold text-slate-800">No Active Sessions</h3>
-                            <p className="text-slate-500 mt-2 max-w-md mx-auto">Browse the available cabins below and select one to start your booking request.</p>
-                        </div>
-                    );
-                }
+            const CabinGrid = useMemo(() => filteredCabins.map(cabin => {
+                const statusInfo = getCabinStatus(cabin.id, allBookings);
+                const isAvailable = statusInfo.status === 'Available';
+                const isSelected = selectedCabinId === cabin.id;
                 
-                const isApproved = userBooking.status === 'Approved';
-                const statusColor = isApproved ? 'bg-emerald-500' : 'bg-amber-500';
-                const isSpecial = userBooking.bookingType === 'Special';
+                // Color coding based on who occupies it
+                let roleBadge = null;
+                if (statusInfo.role === 'student') roleBadge = <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 rounded border border-blue-200">Student</span>;
+                if (statusInfo.role === 'faculty') roleBadge = <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 rounded border border-orange-200">Faculty</span>;
 
                 return (
-                    <div className="relative overflow-hidden bg-white rounded-3xl shadow-2xl shadow-indigo-200/50 border border-slate-100 group animate-enter">
-                        {/* Decorative Top Border */}
-                        <div className={`absolute top-0 left-0 right-0 h-1.5 ${isApproved ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`}></div>
-                        
-                        <div className="p-8 md:p-10 relative z-10">
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
-                                <div>
-                                    <div className="flex flex-wrap items-center gap-3 mb-3">
-                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold text-white shadow-md ${statusColor}`}>
-                                            {isApproved ? <CheckCircle className="w-3.5 h-3.5 mr-1.5"/> : <Clock className="w-3.5 h-3.5 mr-1.5"/>}
-                                            {userBooking.status.toUpperCase()}
-                                        </span>
-                                        {isSpecial && (
-                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                                                <Star className="w-3.5 h-3.5 mr-1.5"/> Special Request
-                                            </span>
-                                        )}
-                                        <span className="text-xs text-slate-400 font-mono">ID: {userBooking.id.slice(-6)}</span>
-                                    </div>
-                                    <h2 className="text-4xl font-extrabold text-slate-800 tracking-tight">
-                                        {userBooking.cabinId} 
-                                        <span className="text-xl font-medium text-slate-400 ml-3">
-                                            ({userBooking.capacity} Pax)
-                                        </span>
-                                    </h2>
-                                    {isSpecial && <div className="text-sm text-purple-600 mt-2 font-medium bg-purple-50 inline-block px-3 py-1 rounded-lg border border-purple-100">Reason: {userBooking.specialReason}</div>}
+                    <div key={cabin.id} 
+                        onClick={isAvailable && !userBooking ? () => selectCabin(cabin.id, cabin.capacity) : undefined}
+                        className={`relative p-6 bg-white rounded-2xl shadow-sm border transition-all duration-300
+                            ${isSelected ? 'ring-2 ring-indigo-500 border-transparent bg-indigo-50/50' : 
+                              isAvailable ? 'border-slate-200 hover:border-indigo-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer' : 
+                              'border-slate-100 opacity-70 grayscale-[0.3] cursor-not-allowed'}
+                        `}
+                    >
+                        <div className="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-800">{cabin.name}</h3>
+                                <div className="text-xs text-slate-500 mt-1 flex items-center"><Users className="w-3 h-3 mr-1"/> {cabin.capacity}</div>
+                            </div>
+                            {isAvailable ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></div>Free</span>
+                            ) : (
+                                <div className="flex flex-col items-end gap-1">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">Occupied</span>
+                                    {roleBadge}
                                 </div>
-
-                                {isApproved && (
-                                    <div className="flex flex-col items-end">
-                                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Time Remaining</p>
-                                        <div className={`text-5xl font-mono font-bold tracking-tighter ${isCritical ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
-                                            {remainingTime || '--:--'}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="bg-slate-50 rounded-2xl p-6 mb-8 border border-slate-100">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {(userBooking.groupMembers || []).map((name, i) => (
-                                        <div key={i} className="flex items-center space-x-3 bg-white p-3 rounded-xl shadow-sm border border-slate-100">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${i===0 ? 'bg-indigo-500' : 'bg-slate-300'}`}>
-                                                {name.charAt(0)}
-                                            </div>
-                                            <span className={`text-sm ${i===0 ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
-                                                {name} {i===0 && <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded ml-1">HOST</span>}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col sm:flex-row gap-4">
-                                {isApproved && (
-                                    <button 
-                                        onClick={confirmCheckOut}
-                                        className="flex-1 py-4 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-emerald-200 flex items-center justify-center group"
-                                    >
-                                        <LogOut className="w-5 h-5 mr-2 group-hover:-translate-x-1 transition-transform"/> Check Out Now
-                                    </button>
-                                )}
-                                <button 
-                                    onClick={confirmCancelBooking}
-                                    className={`
-                                        py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center
-                                        ${!isApproved 
-                                            ? 'w-full bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200' 
-                                            : 'flex-1 bg-white border-2 border-slate-100 hover:border-red-100 text-slate-500 hover:text-red-500'}
-                                    `}
-                                >
-                                    Cancel Request
-                                </button>
-                            </div>
+                            )}
                         </div>
+                        {isSelected && <div className="text-xs font-bold text-indigo-600 uppercase tracking-wider mt-4">Selected</div>}
                     </div>
                 );
-            };
+            }), [selectedCabinId, allBookings, userBooking, selectCabin, filteredCabins]);
 
-            const FacultyView = useMemo(() => {
-                const active = allBookings
-                    .filter(b => b.status === 'Pending' || b.status === 'Approved')
-                    .sort((a, b) => {
-                        const timeA = a.timestamp?.getTime ? a.timestamp.getTime() : 0;
-                        const timeB = b.timestamp?.getTime ? b.timestamp.getTime() : 0;
-                        return timeA - timeB;
-                    });
+            const AdminQueue = useMemo(() => {
+                const list = adminViewRole === 'student' ? studentBookings : facultyBookings;
+                const active = list.filter(b => b.status === 'Pending' || b.status === 'Approved').sort((a,b) => a.timestamp - b.timestamp);
 
-                if (active.length === 0) return <div className="text-center text-slate-400 py-12 italic">Queue is currently empty</div>;
+                if (active.length === 0) return <div className="text-center text-slate-400 py-12 italic">No active requests.</div>;
 
                 return active.map(b => (
-                    <div key={b.id} className="flex flex-col md:flex-row justify-between items-center p-5 bg-white border border-slate-100 rounded-xl shadow-sm mb-3 hover:shadow-md transition-all duration-200 group">
-                        <div className="mb-4 md:mb-0 w-full md:w-auto">
+                    <div key={b.id} className="flex flex-col md:flex-row justify-between items-center p-5 bg-white border border-slate-100 rounded-xl shadow-sm mb-3 hover:shadow-md transition-all">
+                        <div className="mb-4 md:mb-0">
                             <div className="flex items-center gap-3 mb-2">
                                 <span className={`w-2.5 h-2.5 rounded-full ${b.status === 'Pending' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
                                 <span className="font-bold text-lg text-slate-800">{b.cabinId}</span>
-                                {b.bookingType === 'Special' && (
-                                    <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center">
-                                        <Star className="w-3 h-3 mr-1"/> Special
-                                    </span>
-                                )}
+                                {b.bookingType === 'Special' && <span className="bg-purple-100 text-purple-700 text-[10px] px-2 rounded-full font-bold uppercase"><Star className="w-3 h-3 inline mr-1"/>Special</span>}
                             </div>
-                            <div className="flex items-center text-sm text-slate-500">
-                                <User className="w-3.5 h-3.5 mr-1.5"/> {b.requesterName}
-                                <span className="mx-2 text-slate-300">|</span>
-                                <Users className="w-3.5 h-3.5 mr-1.5"/> {b.groupMembers.length} Ppl
-                                <span className="mx-2 text-slate-300">|</span>
-                                <Clock className="w-3.5 h-3.5 mr-1.5"/> {b.timestamp?.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            <div className="text-sm text-slate-500 flex items-center gap-2">
+                                <User className="w-3 h-3"/> {b.requesterName} <span className="text-slate-300">|</span> 
+                                <Users className="w-3 h-3"/> {b.groupMembers.length}
                             </div>
-                            {b.bookingType === 'Special' && (
-                                <div className="mt-2 text-xs bg-purple-50 text-purple-700 p-2 rounded-lg border border-purple-100 max-w-md">
-                                    <span className="font-bold">{b.specialReason}</span>
-                                    {b.specialComment && <span className="text-purple-600 block mt-1 italic">"{b.specialComment}"</span>}
-                                </div>
-                            )}
+                            {b.specialComment && <div className="mt-1 text-xs bg-slate-50 p-1.5 rounded text-slate-600 border border-slate-100 italic">"{b.specialComment}"</div>}
                         </div>
-                        
-                        <div className="flex gap-2 w-full md:w-auto">
+                        <div className="flex gap-2">
                             {b.status === 'Pending' ? (
-                                <>
-                                    <button onClick={() => updateBookingStatus(b.id, 'Approved')} className="flex-1 md:flex-none py-2 px-4 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors">Approve</button>
-                                    <button onClick={() => updateBookingStatus(b.id, 'Rejected')} className="flex-1 md:flex-none py-2 px-4 bg-red-50 text-red-700 border border-red-100 rounded-lg text-sm font-bold hover:bg-red-100 transition-colors">Reject</button>
-                                </>
+                                <><button onClick={() => updateBookingStatus(b, 'Approved')} className="py-2 px-4 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-sm font-bold hover:bg-emerald-100">Approve</button>
+                                  <button onClick={() => updateBookingStatus(b, 'Rejected')} className="py-2 px-4 bg-red-50 text-red-700 border border-red-100 rounded-lg text-sm font-bold hover:bg-red-100">Reject</button></>
                             ) : (
-                                <button onClick={() => updateBookingStatus(b.id, 'Completed')} className="w-full md:w-auto py-2 px-4 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-200 transition-colors">Force Complete</button>
+                                <button onClick={() => updateBookingStatus(b, 'Completed')} className="py-2 px-4 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-200">End</button>
                             )}
                         </div>
                     </div>
                 ));
-            }, [allBookings, updateBookingStatus]);
+            }, [studentBookings, facultyBookings, adminViewRole, updateBookingStatus]);
 
-            const exportCSV = () => {
-                if (!allBookings.length) return;
-                const headers = ["ID,Cabin,Status,Type,Reason,Comment,Requester,Time"];
-                const rows = allBookings.map(b => {
-                     const timeStr = b.timestamp?.toISOString ? b.timestamp.toISOString() : '';
-                     const reason = b.specialReason || 'Standard';
-                     const type = b.bookingType || 'Standard';
-                     const comment = b.specialComment ? b.specialComment.replace(/"/g, '""') : '';
-                     return `${b.id},${b.cabinId},${b.status},${type},"${reason}","${comment}","${b.requesterName}",${timeStr}`;
-                });
-                const csvContent = headers.concat(rows).join('\n');
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv' }));
-                link.download = `bookings-${Date.now()}.csv`;
-                link.click();
-            };
-
+            // --- Main Render ---
             return (
                 <div className="min-h-screen pb-20">
                     <AlertComponent />
                     <ConfirmationModal modal={modal} setModal={setModal} />
 
-                    {/* Glass Header */}
                     <header className="glass-header sticky top-0 z-40 px-6 py-4">
                         <div className="max-w-7xl mx-auto flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-                                    <Zap className="w-6 h-6"/>
-                                </div>
-                                <div>
-                                    <h1 className="text-xl font-bold text-slate-900 tracking-tight">CabinControl</h1>
-                                    <p className="text-xs text-slate-500 hidden sm:block">Campus Study Space Management</p>
-                                </div>
+                                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Zap className="w-6 h-6"/></div>
+                                <h1 className="text-xl font-bold text-slate-900 tracking-tight">CabinControl</h1>
                             </div>
-                            
                             <div className="flex items-center gap-4">
-                                {isDemoMode && <div className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded border border-blue-200">DEMO MODE</div>}
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
+                                {/* Librarian Login Button */}
+                                {!isAdminLoggedIn ? (
+                                    <button onClick={handleLoginClick} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors">
+                                        <Lock className="w-3 h-3"/> Librarian
+                                    </button>
+                                ) : (
+                                    <button onClick={() => setIsAdminLoggedIn(false)} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold text-indigo-600 transition-colors border border-indigo-200">
+                                        <Unlock className="w-3 h-3"/> Logout
+                                    </button>
+                                )}
+                                
+                                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
                                     <div className={`w-2 h-2 rounded-full ${isAuthReady ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></div>
-                                    <span className="text-xs font-mono text-slate-600">
-                                        {userId ? userId.substring(0, 6) + '...' : 'Connecting...'}
-                                    </span>
+                                    <span className="text-xs font-mono text-slate-600">{userId ? userId.substring(0, 6) + '...' : 'Connecting...'}</span>
                                 </div>
                             </div>
                         </div>
                     </header>
 
                     <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-12">
-                        
-                        {/* 1. Status Section */}
-                        <section className="animate-enter" style={{animationDelay: '0.1s'}}>
-                            <UserStatusCard />
+                        {/* Status Card */}
+                        <section className="animate-enter">
+                            {userBooking ? (
+                                <div className="relative overflow-hidden bg-white rounded-3xl shadow-xl border border-slate-100 p-8">
+                                    <div className={`absolute top-0 left-0 right-0 h-1.5 ${userBooking.status === 'Approved' ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
+                                    <div className="flex justify-between items-center mb-6">
+                                        <div>
+                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold text-white mb-2 ${userBooking.status === 'Approved' ? 'bg-emerald-500' : 'bg-amber-500'}`}>{userBooking.status}</span>
+                                            <h2 className="text-4xl font-extrabold text-slate-800">{userBooking.cabinId}</h2>
+                                            <p className="text-sm text-slate-500 mt-1">Booked as: <span className="font-semibold uppercase text-slate-700">{userBooking.role}</span></p>
+                                        </div>
+                                        {userBooking.status === 'Approved' && (
+                                            <div className="text-right">
+                                                <p className="text-xs font-bold text-slate-400 uppercase">Remaining</p>
+                                                <div className="text-4xl font-mono font-bold text-slate-800">{useCountdown(userBooking).remainingTime || '--:--'}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-4">
+                                        {userBooking.status === 'Approved' && <button onClick={() => setModal({ title: "End Session?", message: "Free up cabin?", confirmText: "Check Out", action: completeBooking, confirmClass: "bg-emerald-600" })} className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl">Check Out</button>}
+                                        <button onClick={() => setModal({ title: "Cancel?", message: "Cancel booking?", confirmText: "Cancel", action: cancelBooking, confirmClass: "bg-red-600" })} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl border border-slate-200">Cancel</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="glass-panel p-8 rounded-3xl text-center border-dashed border-2 border-slate-300">
+                                    <BookOpen className="w-10 h-10 mx-auto text-indigo-400 mb-4"/>
+                                    <h3 className="text-lg font-bold text-slate-700">Ready to Book</h3>
+                                    <p className="text-slate-500">Select a cabin below to begin.</p>
+                                </div>
+                            )}
                         </section>
 
-                        {/* 2. Selection Section */}
-                        <section className="animate-enter" style={{animationDelay: '0.2s'}}>
-                            <div className="flex flex-col sm:flex-row justify-between items-end mb-6 border-b border-slate-200 pb-4">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-slate-800">Available Spaces</h2>
-                                    <p className="text-slate-500 mt-1">Select a cabin to view details</p>
-                                </div>
-                                <div className="mt-4 sm:mt-0 relative">
+                        {/* Available Spaces */}
+                        <section className="animate-enter" style={{animationDelay: '0.1s'}}>
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold text-slate-800">Available Spaces</h2>
+                                <div className="relative">
                                     <Filter className="w-4 h-4 text-slate-500 absolute left-3 top-3"/>
-                                    <select 
-                                        value={capacityFilter}
-                                        onChange={(e) => setCapacityFilter(e.target.value)}
-                                        className="pl-9 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm appearance-none cursor-pointer hover:border-indigo-300 transition-colors"
-                                    >
-                                        <option value="">All Capacities</option>
-                                        <option value="4">4 Person</option>
-                                        <option value="5">5 Person</option>
-                                        <option value="6">6 Person</option>
+                                    <select value={capacityFilter} onChange={(e) => setCapacityFilter(e.target.value)} className="pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium outline-none">
+                                        <option value="">All</option><option value="4">4 Pax</option><option value="5">5 Pax</option><option value="6">6 Pax</option>
                                     </select>
                                 </div>
                             </div>
-                            
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                                {CabinGrid}
-                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">{CabinGrid}</div>
                         </section>
 
-                        {/* 3. Booking Form */}
+                        {/* Booking Form */}
                         {selectedCabinId && !userBooking && (
-                            <section id="booking-form-anchor" className="animate-enter" style={{animationDelay: '0s'}}>
-                                <div className="glass-panel p-8 rounded-3xl shadow-xl max-w-3xl mx-auto relative overflow-hidden">
-                                    <div className="absolute top-0 left-0 w-2 h-full bg-indigo-600"></div>
+                            <section id="booking-form-anchor" className="animate-enter">
+                                <div className="glass-panel p-8 rounded-3xl shadow-xl max-w-2xl mx-auto border-l-4 border-indigo-600">
+                                    <h2 className="text-2xl font-bold text-slate-900 mb-6">Booking Details for {selectedCabinId}</h2>
                                     
-                                    <div className="mb-8">
-                                        <h2 className="text-2xl font-bold text-slate-900">Finalize Request</h2>
-                                        <p className="text-slate-500 mt-1">
-                                            Booking <span className="font-bold text-slate-900">{selectedCabinId}</span> 
-                                            {isSpecialRequest ? ' for limited occupancy' : ' for full capacity'}
-                                        </p>
+                                    {/* Role Selector */}
+                                    <div className="mb-6">
+                                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">I am booking as:</label>
+                                        <div className="flex bg-slate-100 p-1 rounded-xl">
+                                            <button onClick={() => setBookingRole('student')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${bookingRole === 'student' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}><GraduationCap className="w-4 h-4 inline mr-2"/>Student</button>
+                                            <button onClick={() => setBookingRole('faculty')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${bookingRole === 'faculty' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'}`}><Briefcase className="w-4 h-4 inline mr-2"/>Faculty</button>
+                                        </div>
                                     </div>
 
-                                    {/* Custom Tab Switcher */}
-                                    <div className="flex bg-slate-100 p-1.5 rounded-xl mb-8 relative">
-                                        <button 
-                                            onClick={() => handleModeSwitch('standard')}
-                                            className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all relative z-10 flex items-center justify-center gap-2 ${!isSpecialRequest ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        >
-                                            <Zap className="w-4 h-4"/> Standard Booking
-                                        </button>
-                                        <button 
-                                            onClick={() => handleModeSwitch('special')}
-                                            className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all relative z-10 flex items-center justify-center gap-2 ${isSpecialRequest ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        >
-                                            <Star className="w-4 h-4"/> Special Request
-                                        </button>
+                                    {/* Type Selector */}
+                                    <div className="flex gap-4 mb-6 text-sm">
+                                        <label className="flex items-center cursor-pointer">
+                                            <input type="radio" checked={!isSpecialRequest} onChange={() => { setIsSpecialRequest(false); setGroupMembers(new Array(selectedCapacity).fill('')); }} className="mr-2 accent-indigo-600"/>
+                                            <span className="font-medium text-slate-700">Standard (Full Capacity)</span>
+                                        </label>
+                                        <label className="flex items-center cursor-pointer">
+                                            <input type="radio" checked={isSpecialRequest} onChange={() => { setIsSpecialRequest(true); setGroupMembers(['']); }} className="mr-2 accent-purple-600"/>
+                                            <span className="font-medium text-slate-700">Special Request (1-2 Pax)</span>
+                                        </label>
                                     </div>
 
-                                    <div id="student-request-form" className="transition-all duration-300">
-                                        {/* Special Request Inputs */}
-                                        {isSpecialRequest && (
-                                            <div className="mb-8 p-5 bg-purple-50/50 rounded-2xl border border-purple-100 animate-enter">
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-4">
-                                                    <div>
-                                                        <label className="block text-xs font-bold text-purple-800 uppercase mb-1.5 ml-1">Reason</label>
-                                                        <div className="relative group">
-                                                            <Briefcase className="w-4 h-4 absolute left-3 top-3.5 text-purple-400 group-focus-within:text-purple-600 transition-colors"/>
-                                                            <select 
-                                                                value={specialReason}
-                                                                onChange={(e) => setSpecialReason(e.target.value)}
-                                                                className="w-full pl-10 p-3 bg-white border border-purple-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
-                                                            >
-                                                                <option value="Interview">Interview</option>
-                                                                <option value="Meeting">Meeting</option>
-                                                                <option value="Medical">Medical/Health</option>
-                                                                <option value="Other">Other</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-bold text-purple-800 uppercase mb-1.5 ml-1">Occupancy</label>
-                                                        <div className="relative group">
-                                                            <Users className="w-4 h-4 absolute left-3 top-3.5 text-purple-400 group-focus-within:text-purple-600 transition-colors"/>
-                                                            <select 
-                                                                value={specialSize}
-                                                                onChange={handleSpecialSizeChange}
-                                                                className="w-full pl-10 p-3 bg-white border border-purple-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
-                                                            >
-                                                                <option value="1">1 Person</option>
-                                                                <option value="2">2 People</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                
+                                    {/* Special Logic */}
+                                    {isSpecialRequest && (
+                                        <div className="mb-6 p-4 bg-purple-50 rounded-xl border border-purple-100">
+                                            <div className="grid grid-cols-2 gap-4 mb-3">
                                                 <div>
-                                                     <label className="block text-xs font-bold text-purple-800 uppercase mb-1.5 ml-1">Additional Details (Optional)</label>
-                                                     <div className="relative group">
-                                                         <MessageSquare className="w-4 h-4 absolute left-3 top-3.5 text-purple-400 group-focus-within:text-purple-600 transition-colors"/>
-                                                         <textarea
-                                                             value={specialComment}
-                                                             onChange={(e) => setSpecialComment(e.target.value)}
-                                                             className="w-full pl-10 p-3 bg-white border border-purple-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all resize-none"
-                                                             placeholder="Briefly explain your request..."
-                                                             rows="2"
-                                                         />
-                                                     </div>
+                                                    <label className="text-xs font-bold text-purple-700 uppercase">Reason</label>
+                                                    <select value={specialReason} onChange={(e) => setSpecialReason(e.target.value)} className="w-full mt-1 p-2 rounded-lg border-purple-200 text-sm">
+                                                        <option>Interview</option><option>Meeting</option><option>Other</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-purple-700 uppercase">Pax</label>
+                                                    <select value={specialSize} onChange={(e) => { setSpecialSize(parseInt(e.target.value)); setGroupMembers(arr => new Array(parseInt(e.target.value)).fill('').map((_,i) => arr[i] || '')); }} className="w-full mt-1 p-2 rounded-lg border-purple-200 text-sm">
+                                                        <option value="1">1 Person</option><option value="2">2 People</option>
+                                                    </select>
                                                 </div>
                                             </div>
-                                        )}
-
-                                        <div className="space-y-4 mb-8">
-                                            {groupMembers.map((name, idx) => (
-                                                <div key={idx} className="group">
-                                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1 flex justify-between">
-                                                        {idx === 0 ? 'Primary Requester' : `Member ${idx + 1}`}
-                                                        {idx === 0 && <span className="text-indigo-500">Required</span>}
-                                                    </label>
-                                                    <div className="relative">
-                                                        <input 
-                                                            type="text"
-                                                            value={name}
-                                                            onChange={(e) => {
-                                                                const newM = [...groupMembers];
-                                                                newM[idx] = e.target.value;
-                                                                setGroupMembers(newM);
-                                                            }}
-                                                            placeholder={idx === 0 ? "Your Full Name" : "Member Name"}
-                                                            className={`
-                                                                w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none transition-all
-                                                                focus:bg-white focus:ring-2 focus:border-transparent
-                                                                ${isSpecialRequest ? 'focus:ring-purple-500' : 'focus:ring-indigo-500'}
-                                                            `}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            ))}
+                                            <textarea value={specialComment} onChange={(e) => setSpecialComment(e.target.value)} placeholder="Additional details..." className="w-full p-2 rounded-lg border-purple-200 text-sm h-20 resize-none"></textarea>
                                         </div>
+                                    )}
 
-                                        <button 
-                                            onClick={submitBooking}
-                                            className={`
-                                                w-full py-4 font-bold rounded-xl shadow-lg transition-all transform active:scale-[0.99] text-white flex items-center justify-center text-lg
-                                                ${isSpecialRequest 
-                                                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:shadow-purple-200' 
-                                                    : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:shadow-indigo-200'}
-                                            `}
-                                        >
-                                            Submit Request <ChevronRight className="w-5 h-5 ml-2"/>
-                                        </button>
+                                    {/* Member Inputs */}
+                                    <div className="space-y-3 mb-8">
+                                        {groupMembers.map((name, i) => (
+                                            <input key={i} type="text" value={name} onChange={(e) => { const n = [...groupMembers]; n[i] = e.target.value; setGroupMembers(n); }} placeholder={`Member ${i+1} Name`} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"/>
+                                        ))}
                                     </div>
+
+                                    <button onClick={submitBooking} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-transform active:scale-[0.99] ${bookingRole === 'student' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-orange-600 hover:bg-orange-700'}`}>
+                                        Confirm {bookingRole === 'student' ? 'Student' : 'Faculty'} Booking
+                                    </button>
                                 </div>
                             </section>
                         )}
 
-                        {/* 4. Admin Panel */}
-                        <section className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
-                            <div className="flex justify-between items-center mb-8 pb-4 border-b border-slate-100">
+                        {/* Admin Queue (Protected) */}
+                        <section className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm animate-enter" style={{animationDelay: '0.2s'}}>
+                            <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-xl font-bold text-slate-800 flex items-center">
-                                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center mr-3 text-slate-600">
-                                        <Users className="w-5 h-5"/>
-                                    </div>
-                                    Live Queue
+                                    <LayoutDashboard className="w-5 h-5 mr-2 text-slate-500"/> 
+                                    {isAdminLoggedIn ? 'Live Queue' : 'Admin Access Required'}
                                 </h3>
-                                <button onClick={exportCSV} className="text-sm text-indigo-600 hover:text-indigo-800 font-bold flex items-center px-4 py-2 hover:bg-indigo-50 rounded-lg transition-colors">
-                                    <Download className="w-4 h-4 mr-2"/> Export CSV
-                                </button>
+                                
+                                {isAdminLoggedIn && (
+                                    <div className="flex bg-slate-100 p-1 rounded-lg">
+                                        <button onClick={() => setAdminViewRole('student')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${adminViewRole === 'student' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Students</button>
+                                        <button onClick={() => setAdminViewRole('faculty')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${adminViewRole === 'faculty' ? 'bg-white shadow text-orange-600' : 'text-slate-500'}`}>Faculty</button>
+                                    </div>
+                                )}
                             </div>
-                            <div className="space-y-3">
-                                {FacultyView}
-                            </div>
-                        </section>
 
+                            {/* Conditional Admin View */}
+                            {isAdminLoggedIn ? (
+                                <div className="space-y-3">{AdminQueue}</div>
+                            ) : (
+                                <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                                    <ShieldCheck className="w-12 h-12 mx-auto text-slate-300 mb-4"/>
+                                    <h4 className="text-lg font-bold text-slate-700">Restricted Area</h4>
+                                    <p className="text-sm text-slate-500 mb-6">Only authorized librarians can approve or reject booking requests.</p>
+                                    <button 
+                                        onClick={handleLoginClick}
+                                        className="px-6 py-2.5 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors shadow-lg shadow-slate-200"
+                                    >
+                                        Login as Librarian
+                                    </button>
+                                </div>
+                            )}
+                        </section>
                     </main>
-                    
-                    <footer className="mt-12 py-8 text-center text-slate-400 text-sm border-t border-slate-200/50">
-                        <p>© {new Date().getFullYear()} CabinControl System. Optimized for Collaborative Learning.</p>
-                    </footer>
                 </div>
             );
         };

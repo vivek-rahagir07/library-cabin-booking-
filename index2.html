@@ -51,32 +51,18 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useCallback, useMemo } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info } from 'https://esm.sh/lucide-react@0.263.1';
+        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter } from 'https://esm.sh/lucide-react@0.263.1';
         
-        // Firebase Imports (Stable Version)
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
-        import { getFirestore, doc, addDoc, onSnapshot, collection, query, updateDoc, deleteDoc, Timestamp, setLogLevel } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
+        // Firebase Imports
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, updateDoc, deleteDoc, Timestamp, setLogLevel } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 
         // --- Global Constants and Firebase Initialization ---
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        
-        // UPDATED: User's Firebase Configuration
-        const firebaseConfig = {
-          apiKey: "AIzaSyCHimNRSSB4ZoqLCu5Okq4yL0i85EMzUIU",
-          authDomain: "library-booking-83e2a.firebaseapp.com",
-          projectId: "library-booking-83e2a",
-          storageBucket: "library-booking-83e2a.firebasestorage.app",
-          messagingSenderId: "712017475970",
-          appId: "1:712017475970:web:760a61d2bcbde376eff79b",
-          measurementId: "G-XEHSTZ2SYD"
-        };
-        
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        // Demo Mode Detection
-        const isDemoMode = false;
 
         const CABIN_COUNT = 15;
         const BOOKING_DURATION_HOURS = 2;
@@ -200,40 +186,10 @@
             const [modal, setModal] = useState(null);
             const [alertUser, AlertComponent] = useAlert();
 
-            // Init Effect
+            // Firebase Init
             useEffect(() => {
-                if (isDemoMode) {
-                    console.warn("Running in Demo Mode: No Firebase Config found.");
-                    setUserId("demo-user-123");
-                    setIsAuthReady(true);
-                    
-                    // Initialize some mock data for the demo
-                    setAllBookings([
-                        {
-                            id: 'mock-1',
-                            cabinId: 'C1',
-                            status: 'Approved',
-                            requesterId: 'other-user',
-                            requesterName: 'Alice Johnson',
-                            groupMembers: ['Alice Johnson', 'Bob Smith'],
-                            timestamp: new Date(Date.now() - 30 * 60 * 1000), // Started 30 mins ago
-                            durationHours: 2,
-                            capacity: 4
-                        },
-                        {
-                            id: 'mock-2',
-                            cabinId: 'C5',
-                            status: 'Pending',
-                            requesterId: 'other-user-2',
-                            requesterName: 'Charlie Brown',
-                            groupMembers: ['Charlie Brown', 'Lucy'],
-                            timestamp: new Date(),
-                            durationHours: 2,
-                            capacity: 5
-                        }
-                    ]);
-                    
-                    alertUser(<><Info className="w-5 h-5"/> <span>Demo Mode Active (Local Data)</span></>, 'bg-blue-600 text-white');
+                if (!firebaseConfig) {
+                    alertUser(<><XCircle className="w-5 h-5"/> <span>Firebase config missing.</span></>, 'bg-red-600 text-white');
                     return;
                 }
 
@@ -272,20 +228,8 @@
                 }
             }, [alertUser]);
 
-            // Realtime Listener / Demo Data
+            // Realtime Listener
             useEffect(() => {
-                if (isDemoMode) {
-                    // In demo mode, we just recalculate userBooking from the local allBookings state
-                    const currentBooking = allBookings.find(b => 
-                        b.requesterId === userId && 
-                        b.status !== 'Completed' && 
-                        b.status !== 'Rejected' && 
-                        !b.completionTime
-                    );
-                    setUserBooking(currentBooking);
-                    return;
-                }
-
                 if (!db || !isAuthReady || !userId) return;
 
                 const q = query(collection(db, BOOKINGS_COLLECTION));
@@ -321,7 +265,7 @@
                 });
 
                 return () => unsubscribe();
-            }, [db, isAuthReady, userId, alertUser, isDemoMode, allBookings]); // Added dependencies for demo mode updates
+            }, [db, isAuthReady, userId, alertUser]);
 
             // Logic
             const selectCabin = useCallback((cabinId, capacity) => {
@@ -356,31 +300,20 @@
                     return;
                 }
                 
-                const newBookingData = {
-                    cabinId: selectedCabinId,
-                    capacity: selectedCapacity,
-                    requesterName: filledMembers[0],
-                    requesterId: userId,
-                    groupMembers: filledMembers,
-                    timestamp: isDemoMode ? new Date() : Timestamp.now(),
-                    durationHours: BOOKING_DURATION_HOURS,
-                    status: 'Pending',
-                    approvedBy: null,
-                    completionTime: null,
-                    exportTimestamp: new Date().toISOString()
-                };
-
-                if (isDemoMode) {
-                    setAllBookings(prev => [...prev, { ...newBookingData, id: `demo-${Date.now()}` }]);
-                    setSelectedCabinId('');
-                    setSelectedCapacity(0);
-                    setGroupMembers([]);
-                    alertUser(<><CheckCircle className="w-5 h-5"/> <span>Request submitted (Demo)!</span></>, 'bg-emerald-600 text-white');
-                    return;
-                }
-                
                 try {
-                    await addDoc(collection(db, BOOKINGS_COLLECTION), newBookingData);
+                    await addDoc(collection(db, BOOKINGS_COLLECTION), {
+                        cabinId: selectedCabinId,
+                        capacity: selectedCapacity,
+                        requesterName: filledMembers[0],
+                        requesterId: userId,
+                        groupMembers: filledMembers,
+                        timestamp: Timestamp.now(),
+                        durationHours: BOOKING_DURATION_HOURS,
+                        status: 'Pending',
+                        approvedBy: null,
+                        completionTime: null,
+                        exportTimestamp: new Date().toISOString()
+                    });
                     
                     setSelectedCabinId('');
                     setSelectedCapacity(0);
@@ -394,15 +327,7 @@
             }, [isAuthReady, userBooking, selectedCabinId, selectedCapacity, groupMembers, allBookings, alertUser, db, userId]);
 
             const cancelBooking = useCallback(async () => {
-                if (!userBooking) return;
-                
-                if (isDemoMode) {
-                    setAllBookings(prev => prev.filter(b => b.id !== userBooking.id));
-                    alertUser(<><LogOut className="w-5 h-5"/> <span>Request cancelled (Demo).</span></>, 'bg-sky-600 text-white');
-                    return;
-                }
-
-                if (!db) return;
+                if (!userBooking || !db) return;
                 try {
                     await deleteDoc(doc(db, BOOKINGS_COLLECTION, userBooking.id));
                     alertUser(<><LogOut className="w-5 h-5"/> <span>Request cancelled.</span></>, 'bg-sky-600 text-white');
@@ -413,15 +338,8 @@
             }, [userBooking, alertUser, db]);
             
             const completeBookingEarly = useCallback(async () => {
-                if (!userBooking || userBooking.status !== 'Approved') return;
+                if (!userBooking || userBooking.status !== 'Approved' || !db) return;
                 
-                if (isDemoMode) {
-                    setAllBookings(prev => prev.map(b => b.id === userBooking.id ? { ...b, status: 'Completed', completionTime: new Date() } : b));
-                    alertUser(<><CheckCircle className="w-5 h-5"/> <span>Checked out (Demo).</span></>, 'bg-emerald-600 text-white');
-                    return;
-                }
-
-                if (!db) return;
                 try {
                     await updateDoc(doc(db, BOOKINGS_COLLECTION, userBooking.id), {
                         status: 'Completed',
@@ -453,28 +371,11 @@
             }, [completeBookingEarly]);
             
             const updateBookingStatus = useCallback(async (bookingId, newStatus) => {
-                if (!isAuthReady) return;
+                if (!isAuthReady || !db) return;
                 
                 const facultyName = 'Faculty Admin';
-                
-                if (isDemoMode) {
-                     setAllBookings(prev => prev.map(b => {
-                        if (b.id === bookingId) {
-                            const updates = { status: newStatus };
-                            if (newStatus === 'Approved') {
-                                updates.approvedBy = facultyName;
-                                updates.timestamp = new Date();
-                            }
-                            return { ...b, ...updates };
-                        }
-                        return b;
-                     }));
-                     return;
-                }
-
-                if (!db) return;
-
                 const updateData = { status: newStatus };
+
                 if (newStatus === 'Approved') {
                     updateData.approvedBy = facultyName;
                     updateData.timestamp = Timestamp.now();
@@ -753,7 +654,6 @@
                             <div>
                                 <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight header-glow">CabinControl</h1>
                                 <p className="text-indigo-200 mt-2">Campus Study Space Management</p>
-                                {isDemoMode && <div className="mt-2 text-xs bg-blue-500/30 border border-blue-400/50 rounded px-2 py-1 inline-block">Local Demo Mode</div>}
                             </div>
                             <div className="hidden sm:block text-right">
                                 <div className="text-xs font-mono bg-indigo-700/50 px-3 py-1 rounded-full text-indigo-200">

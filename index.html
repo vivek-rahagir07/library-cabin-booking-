@@ -18,56 +18,83 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f8fafc;
-            background-image: radial-gradient(#e2e8f0 1px, transparent 1px);
-            background-size: 24px 24px;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+            background-attachment: fixed;
+            background-size: cover;
+            min-height: 100vh;
         }
 
         .glass-panel {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
         }
 
         .glass-header {
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+            position: sticky;
+            top: 0;
+            z-index: 50;
         }
 
-        @keyframes fadeInScale {
-            from { opacity: 0; transform: scale(0.98) translateY(10px); }
-            to { opacity: 1; transform: scale(1) translateY(0); }
+        .cabin-card {
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        
+        .cabin-card:hover:not(.disabled) {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        @keyframes slideUpFade {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .animate-enter {
-            animation: fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0; 
+        }
+
+        .input-group:focus-within label {
+            color: #4f46e5;
+        }
+        
+        .input-group:focus-within svg {
+            color: #4f46e5;
         }
 
         /* Custom Scrollbar */
         ::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
         }
         ::-webkit-scrollbar-track {
-            background: transparent; 
+            background: rgba(0,0,0,0.05); 
         }
         ::-webkit-scrollbar-thumb {
-            background: #cbd5e1; 
-            border-radius: 3px;
+            background: rgba(0,0,0,0.2); 
+            border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8; 
+            background: rgba(0,0,0,0.3); 
         }
     </style>
 </head>
-<body class="text-slate-900 min-h-screen flex flex-col">
+<body class="text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useCallback, useMemo, useRef } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, GraduationCap, LayoutDashboard, Lock, Unlock, ShieldCheck, WifiOff, Loader2 } from 'https://esm.sh/lucide-react@0.263.1';
+        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, GraduationCap, LayoutDashboard, Lock, Unlock, ShieldCheck, WifiOff, Loader2, Calendar } from 'https://esm.sh/lucide-react@0.263.1';
         
         // Firebase Imports (Stable Version)
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
@@ -89,18 +116,15 @@
             render() {
                 if (this.state.hasError) {
                     return (
-                        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+                        <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
                             <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg w-full border-l-4 border-red-500">
                                 <h1 className="text-2xl font-bold text-slate-800 mb-2 flex items-center">
                                     <AlertTriangle className="w-8 h-8 text-red-500 mr-3"/>
-                                    App Error
+                                    System Error
                                 </h1>
-                                <p className="text-slate-600 mb-4">The application encountered a critical error.</p>
-                                <div className="bg-slate-100 p-4 rounded-lg overflow-auto text-xs font-mono text-red-600 mb-6 max-h-40">
-                                    {this.state.error?.toString()}
-                                </div>
-                                <button onClick={() => window.location.reload()} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700">
-                                    Reload
+                                <p className="text-slate-600 mb-4">Something went unexpectedly wrong.</p>
+                                <button onClick={() => window.location.reload()} className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">
+                                    Reload Page
                                 </button>
                             </div>
                         </div>
@@ -141,12 +165,14 @@
             const [alert, setAlert] = useState({ message: '', classes: '', visible: false });
             const alertUser = useCallback((message, classes) => {
                 setAlert({ message, classes, visible: true });
-                const timer = setTimeout(() => setAlert(prev => ({ ...prev, visible: false })), 6000);
+                const timer = setTimeout(() => setAlert(prev => ({ ...prev, visible: false })), 5000);
                 return () => clearTimeout(timer);
             }, []);
             const AlertComponent = () => (
-                <div className={`fixed top-20 right-6 px-6 py-4 rounded-xl text-left font-medium shadow-2xl transition-all duration-500 ease-out z-[60] ${alert.classes} ${alert.visible ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-10 scale-95 pointer-events-none'} flex items-center space-x-3 backdrop-blur-xl border border-white/10`} role="alert">
-                    {alert.message}
+                <div className={`fixed top-24 right-6 z-[100] transition-all duration-500 ease-out transform ${alert.visible ? 'translate-x-0 opacity-100' : 'translate-x-10 opacity-0 pointer-events-none'}`}>
+                    <div className={`px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md border border-white/20 flex items-center gap-3 font-medium ${alert.classes}`}>
+                        {alert.message}
+                    </div>
                 </div>
             );
             return [alertUser, AlertComponent];
@@ -160,7 +186,6 @@
                     return; 
                 }
                 
-                // Safe check for timestamp method
                 const startTime = booking.timestamp.getTime ? booking.timestamp.getTime() : new Date(booking.timestamp).getTime();
                 if (isNaN(startTime)) { setTime("Error"); return; }
 
@@ -216,18 +241,19 @@
             if (!modal) return null;
             const closeModal = () => setModal(null);
             return (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center z-[70] transition-all duration-300 px-4">
-                    <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md border border-slate-100 animate-enter">
-                        <h3 className="text-2xl font-bold text-slate-800 mb-3">{modal.title}</h3>
-                        <p className="text-slate-600 mb-8 leading-relaxed">{modal.message}</p>
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex justify-center items-center z-[80] transition-all duration-300 p-4">
+                    <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md border border-slate-100 animate-enter relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 to-purple-600"></div>
+                        <h3 className="text-2xl font-bold text-slate-800 mb-2">{modal.title}</h3>
+                        <p className="text-slate-600 mb-8 leading-relaxed text-sm">{modal.message}</p>
                         {modal.inputProps && (
                             <div className="mb-6">
-                                <input {...modal.inputProps} className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"/>
+                                <input {...modal.inputProps} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"/>
                             </div>
                         )}
-                        <div className="flex justify-end space-x-3">
-                            <button onClick={closeModal} className="py-2.5 px-6 rounded-xl font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors">Cancel</button>
-                            <button onClick={() => { if(modal.action) modal.action(); closeModal(); }} className={`py-2.5 px-6 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 ${modal.confirmClass || 'bg-red-600 hover:bg-red-700'}`}>{modal.confirmText}</button>
+                        <div className="flex justify-end gap-3">
+                            <button onClick={closeModal} className="px-6 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+                            <button onClick={() => { if(modal.action) modal.action(); closeModal(); }} className={`px-6 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 ${modal.confirmClass || 'bg-slate-900 hover:bg-slate-800'}`}>{modal.confirmText}</button>
                         </div>
                     </div>
                 </div>
@@ -235,6 +261,7 @@
         };
 
         const App = () => {
+            // ... (State logic same as before, focusing on visual changes below)
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
             const [isAuthReady, setIsAuthReady] = useState(false);
@@ -262,7 +289,6 @@
             const [modal, setModal] = useState(null);
             const [alertUser, AlertComponent] = useAlert();
 
-            // FIX: Call hooks unconditionally at top level
             const { remainingTime } = useCountdown(userBooking);
 
             const allBookings = useMemo(() => [...studentBookings, ...facultyBookings], [studentBookings, facultyBookings]);
@@ -281,7 +307,7 @@
                 setFacultyBookings([mockFaculty]);
                 setIsLoading(false);
                 
-                if (reason) alertUser(<span>{reason}</span>, "bg-slate-700 text-white");
+                if (reason) alertUser(<span>{reason}</span>, "bg-slate-800 text-white");
             }, [alertUser, isDemoMode]);
 
             useEffect(() => {
@@ -417,8 +443,8 @@
                 setModal({
                     title: "Librarian Login",
                     message: "Enter password:",
-                    confirmText: "Login",
-                    confirmClass: "bg-indigo-600",
+                    confirmText: "Access Panel",
+                    confirmClass: "bg-indigo-600 hover:bg-indigo-700",
                     inputProps: { type: "password", placeholder: "Password", onChange: e => passwordRef.current = e.target.value },
                     action: () => {
                         if(passwordRef.current === 'admin123') { setIsAdminLoggedIn(true); alertUser("Logged In", "bg-emerald-500 text-white"); }
@@ -432,77 +458,138 @@
                 return initialCabins.filter(c => c.capacity === parseInt(capacityFilter));
             }, [capacityFilter]);
 
-            if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-10 h-10 animate-spin text-indigo-600"/></div>;
+            if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white"><div className="flex flex-col items-center"><Loader2 className="w-12 h-12 animate-spin text-indigo-400 mb-4"/><p className="font-medium animate-pulse">Initializing System...</p></div></div>;
 
             return (
-                <div className="min-h-screen pb-20">
+                <div className="min-h-screen pb-24">
                     <AlertComponent />
                     <ConfirmationModal modal={modal} setModal={setModal} />
                     
-                    <header className="glass-header sticky top-0 z-40 px-6 py-4">
-                        <div className="max-w-7xl mx-auto flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white"><Zap className="w-6 h-6"/></div>
-                                <h1 className="text-xl font-bold text-slate-900">CabinControl</h1>
+                    <header className="glass-header px-6 py-4 flex justify-between items-center shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                                <Zap className="w-5 h-5"/>
                             </div>
-                            <div className="flex items-center gap-4">
-                                {isDemoMode && <span className="text-xs font-bold bg-slate-200 px-2 py-1 rounded">OFFLINE</span>}
-                                <button onClick={isAdminLoggedIn ? () => setIsAdminLoggedIn(false) : handleLogin} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-200">
-                                    {isAdminLoggedIn ? <Unlock className="w-3 h-3"/> : <Lock className="w-3 h-3"/>}
-                                    {isAdminLoggedIn ? "Logout" : "Librarian"}
-                                </button>
+                            <div>
+                                <h1 className="text-xl font-bold text-slate-800 tracking-tight">CabinControl</h1>
+                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Collaborative Space</p>
                             </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            {isDemoMode && <div className="text-[10px] font-bold bg-amber-100 text-amber-700 px-3 py-1 rounded-full border border-amber-200 shadow-sm flex items-center"><WifiOff className="w-3 h-3 mr-1"/> OFFLINE</div>}
+                            <button onClick={isAdminLoggedIn ? () => setIsAdminLoggedIn(false) : handleLogin} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${isAdminLoggedIn ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+                                {isAdminLoggedIn ? <Unlock className="w-3 h-3"/> : <Lock className="w-3 h-3"/>}
+                                {isAdminLoggedIn ? "Logout" : "Admin"}
+                            </button>
                         </div>
                     </header>
 
-                    <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-12">
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-10 space-y-12">
                         {/* Status Section */}
                         <section className="animate-enter">
                             {userBooking ? (
-                                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8">
-                                    <div className="flex justify-between items-center mb-6">
-                                        <div>
-                                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold text-white mb-2 ${userBooking.status === 'Approved' ? 'bg-emerald-500' : 'bg-amber-500'}`}>{userBooking.status}</span>
-                                            <h2 className="text-3xl font-bold text-slate-800">{userBooking.cabinId}</h2>
-                                        </div>
-                                        {userBooking.status === 'Approved' && (
-                                            <div className="text-right">
-                                                <p className="text-xs font-bold text-slate-400">REMAINING</p>
-                                                <div className="text-3xl font-mono font-bold text-slate-800">{remainingTime || '--:--'}</div>
+                                <div className="relative bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+                                    <div className={`absolute top-0 left-0 w-full h-1.5 ${userBooking.status === 'Approved' ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`}></div>
+                                    <div className="p-8 md:p-10">
+                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+                                            <div>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold text-white shadow-sm ${userBooking.status === 'Approved' ? 'bg-emerald-500' : 'bg-amber-500'}`}>
+                                                        {userBooking.status === 'Approved' ? <CheckCircle className="w-3 h-3 mr-1.5"/> : <Clock className="w-3 h-3 mr-1.5"/>}
+                                                        {userBooking.status.toUpperCase()}
+                                                    </span>
+                                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{userBooking.role} Booking</span>
+                                                </div>
+                                                <h2 className="text-4xl font-black text-slate-800 tracking-tight">{userBooking.cabinId}</h2>
+                                                {userBooking.bookingType === 'Special' && <div className="mt-2 text-sm text-purple-600 font-medium bg-purple-50 inline-block px-3 py-1 rounded-lg border border-purple-100">✨ Special Request: {userBooking.specialReason}</div>}
                                             </div>
-                                        )}
-                                    </div>
-                                    <div className="flex gap-4">
-                                        {userBooking.status === 'Approved' && <button onClick={() => setModal({title:"End Session?", message:"Finish booking?", confirmText:"End", action: completeBooking, confirmClass:"bg-emerald-600"})} className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl">Check Out</button>}
-                                        <button onClick={() => setModal({title:"Cancel?", message:"Delete request?", confirmText:"Cancel", action: cancelBooking, confirmClass:"bg-red-600"})} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl">Cancel</button>
+                                            
+                                            {userBooking.status === 'Approved' && (
+                                                <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100 text-center min-w-[140px]">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Time Left</p>
+                                                    <div className="text-3xl font-mono font-bold text-slate-800">{remainingTime || '--:--'}</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="flex gap-4 pt-6 border-t border-slate-100">
+                                            {userBooking.status === 'Approved' && (
+                                                <button onClick={() => setModal({title:"Check Out?", message:"This will free up the cabin immediately.", confirmText:"Confirm Check Out", action: completeBooking, confirmClass:"bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200"})} 
+                                                    className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-emerald-100 flex items-center justify-center">
+                                                    <LogOut className="w-4 h-4 mr-2"/> Check Out
+                                                </button>
+                                            )}
+                                            <button onClick={() => setModal({title:"Cancel Request?", message:"This action cannot be undone.", confirmText:"Yes, Cancel", action: cancelBooking, confirmClass:"bg-red-600 hover:bg-red-700 shadow-red-200"})} 
+                                                className={`py-3.5 px-6 rounded-xl font-bold transition-all flex items-center justify-center ${userBooking.status === 'Approved' ? 'bg-white border-2 border-slate-100 text-slate-500 hover:text-red-600 hover:border-red-100' : 'w-full bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600'}`}>
+                                                Cancel
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="glass-panel p-8 rounded-3xl text-center border-dashed border-2 border-slate-300">
-                                    <BookOpen className="w-10 h-10 mx-auto text-indigo-400 mb-4"/>
-                                    <h3 className="text-lg font-bold text-slate-700">Ready to Book</h3>
-                                    <p className="text-slate-500">Select a cabin to begin.</p>
+                                <div className="glass-panel p-12 rounded-3xl text-center border border-white/40 shadow-xl shadow-indigo-100/50">
+                                    <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center mx-auto mb-6 text-indigo-500 shadow-inner">
+                                        <BookOpen className="w-10 h-10"/>
+                                    </div>
+                                    <h3 className="text-2xl font-bold text-slate-800 mb-2">Ready to Collaborate?</h3>
+                                    <p className="text-slate-500 max-w-md mx-auto">Select an available cabin from the grid below to start your booking session.</p>
                                 </div>
                             )}
                         </section>
 
                         {/* Cabins Grid */}
-                        <section className="animate-enter">
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-2xl font-bold text-slate-800">Spaces</h2>
-                                <select value={capacityFilter} onChange={e => setCapacityFilter(e.target.value)} className="bg-white border p-2 rounded-lg text-sm"><option value="">All</option><option value="4">4 Pax</option><option value="5">5 Pax</option><option value="6">6 Pax</option></select>
+                        <section className="animate-enter" style={{animationDelay: '0.1s'}}>
+                            <div className="flex flex-col sm:flex-row justify-between items-end mb-8 gap-4 border-b border-slate-200 pb-6">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><LayoutDashboard className="w-6 h-6 text-indigo-500"/> Available Spaces</h2>
+                                    <p className="text-slate-500 mt-1 text-sm">Real-time availability status</p>
+                                </div>
+                                <div className="relative group">
+                                    <Filter className="w-4 h-4 text-slate-400 absolute left-3 top-3 group-hover:text-indigo-500 transition-colors"/>
+                                    <select value={capacityFilter} onChange={e => setCapacityFilter(e.target.value)} className="pl-10 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-300 transition-all cursor-pointer shadow-sm">
+                                        <option value="">All Capacities</option>
+                                        <option value="4">4 Person</option>
+                                        <option value="5">5 Person</option>
+                                        <option value="6">6 Person</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
                                 {filteredCabins.map(cabin => {
                                     const status = getCabinStatus(cabin.id, allBookings);
                                     const isFree = status.status === 'Available';
                                     const isSelected = selectedCabinId === cabin.id;
+                                    const isPending = status.status === 'Pending Approval';
+                                    
                                     return (
                                         <div key={cabin.id} onClick={isFree && !userBooking ? () => selectCabin(cabin.id, cabin.capacity) : undefined} 
-                                            className={`p-6 bg-white rounded-2xl border transition-all ${isSelected ? 'ring-2 ring-indigo-500' : isFree ? 'hover:shadow-lg cursor-pointer' : 'opacity-70 grayscale'}`}>
-                                            <h3 className="font-bold text-slate-800">{cabin.name}</h3>
-                                            <div className="text-xs text-slate-500 mt-1">{cabin.capacity} Seats</div>
-                                            <div className={`mt-4 text-xs font-bold ${isFree ? 'text-emerald-600' : 'text-red-500'}`}>{isFree ? 'Available' : 'Occupied'}</div>
+                                            className={`cabin-card relative p-6 bg-white rounded-2xl border transition-all duration-300 group
+                                                ${isSelected ? 'border-indigo-500 ring-4 ring-indigo-500/10 z-10' : 
+                                                  isFree ? 'border-slate-200 hover:border-indigo-300 cursor-pointer' : 
+                                                  'border-slate-100 bg-slate-50/50 cursor-not-allowed disabled'}
+                                            `}>
+                                            
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <h3 className={`text-lg font-bold ${isSelected ? 'text-indigo-700' : 'text-slate-700'}`}>{cabin.name}</h3>
+                                                    <div className="text-xs text-slate-400 mt-1 flex items-center font-medium"><Users className="w-3 h-3 mr-1"/> {cabin.capacity} Seats</div>
+                                                </div>
+                                                {isFree ? (
+                                                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm"><CheckCircle className="w-4 h-4"/></div>
+                                                ) : isPending ? (
+                                                    <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shadow-sm"><Clock className="w-4 h-4"/></div>
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-400"><XCircle className="w-4 h-4"/></div>
+                                                )}
+                                            </div>
+                                            
+                                            <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
+                                                <span className={`text-[10px] font-bold uppercase tracking-wider ${isFree ? 'text-emerald-600' : isPending ? 'text-amber-600' : 'text-red-400'}`}>
+                                                    {isFree ? 'Available' : isPending ? 'Pending' : 'Occupied'}
+                                                </span>
+                                                {isSelected && <div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">SELECTED</div>}
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -511,80 +598,172 @@
 
                         {/* Booking Form */}
                         {selectedCabinId && !userBooking && (
-                            <section id="booking-form-anchor" className="animate-enter glass-panel p-8 rounded-3xl shadow-xl max-w-2xl mx-auto border-l-4 border-indigo-600">
-                                <h2 className="text-2xl font-bold text-slate-900 mb-6">Booking {selectedCabinId}</h2>
-                                
-                                <div className="flex bg-slate-100 p-1 rounded-xl mb-6">
-                                    <button onClick={() => setBookingRole('student')} className={`flex-1 py-2 rounded-lg text-sm font-bold ${bookingRole === 'student' ? 'bg-white shadow' : ''}`}>Student</button>
-                                    <button onClick={() => setBookingRole('faculty')} className={`flex-1 py-2 rounded-lg text-sm font-bold ${bookingRole === 'faculty' ? 'bg-white shadow' : ''}`}>Faculty</button>
-                                </div>
-
-                                <div className="flex gap-4 mb-6 text-sm">
-                                    <label className="flex items-center"><input type="radio" checked={!isSpecialRequest} onChange={() => { setIsSpecialRequest(false); setGroupMembers(new Array(selectedCapacity).fill('')); }} className="mr-2"/> Standard</label>
-                                    <label className="flex items-center"><input type="radio" checked={isSpecialRequest} onChange={() => { setIsSpecialRequest(true); setGroupMembers(['']); }} className="mr-2"/> Special</label>
-                                </div>
-
-                                {isSpecialRequest && (
-                                    <div className="mb-6 p-4 bg-purple-50 rounded-xl">
-                                        <select value={specialReason} onChange={e => setSpecialReason(e.target.value)} className="w-full mb-3 p-2 rounded border"><option>Interview</option><option>Meeting</option></select>
-                                        <select value={specialSize} onChange={e => { setSpecialSize(parseInt(e.target.value)); setGroupMembers(new Array(parseInt(e.target.value)).fill('')); }} className="w-full mb-3 p-2 rounded border"><option value="1">1 Person</option><option value="2">2 People</option></select>
-                                        <textarea value={specialComment} onChange={e => setSpecialComment(e.target.value)} placeholder="Details..." className="w-full p-2 rounded border h-20"></textarea>
+                            <section id="booking-form-anchor" className="animate-enter">
+                                <div className="glass-panel p-8 rounded-3xl shadow-2xl shadow-indigo-200/40 max-w-2xl mx-auto border border-white/60 relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                                    
+                                    <h2 className="text-3xl font-bold text-slate-800 mb-1">Finalize Booking</h2>
+                                    <p className="text-slate-500 mb-8">You are requesting <span className="font-bold text-indigo-600">{selectedCabinId}</span></p>
+                                    
+                                    <div className="bg-slate-50 p-1.5 rounded-xl mb-8 flex relative">
+                                        <button onClick={() => setBookingRole('student')} className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all relative z-10 flex items-center justify-center gap-2 ${bookingRole === 'student' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                                            <GraduationCap className="w-4 h-4"/> Student
+                                        </button>
+                                        <button onClick={() => setBookingRole('faculty')} className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all relative z-10 flex items-center justify-center gap-2 ${bookingRole === 'faculty' ? 'bg-white text-orange-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                                            <Briefcase className="w-4 h-4"/> Faculty
+                                        </button>
                                     </div>
-                                )}
 
-                                <div className="space-y-3 mb-6">
-                                    {groupMembers.map((name, i) => (
-                                        <input key={i} value={name} onChange={e => { const n = [...groupMembers]; n[i] = e.target.value; setGroupMembers(n); }} placeholder={`Name ${i+1}`} className="w-full p-3 bg-slate-50 border rounded-xl"/>
-                                    ))}
+                                    <div className="space-y-4 mb-8">
+                                        <label className={`flex items-center p-4 border rounded-xl cursor-pointer transition-all ${!isSpecialRequest ? 'border-indigo-500 bg-indigo-50/30 ring-1 ring-indigo-500' : 'border-slate-200 hover:border-slate-300'}`}>
+                                            <input type="radio" checked={!isSpecialRequest} onChange={() => { setIsSpecialRequest(false); setGroupMembers(new Array(selectedCapacity).fill('')); }} className="w-5 h-5 text-indigo-600 border-gray-300 focus:ring-indigo-500 mr-3"/>
+                                            <div className="flex-1">
+                                                <span className="font-bold text-slate-700 block">Standard Booking</span>
+                                                <span className="text-xs text-slate-500">Full cabin capacity ({selectedCapacity} people)</span>
+                                            </div>
+                                            <Users className={`w-5 h-5 ${!isSpecialRequest ? 'text-indigo-500' : 'text-slate-300'}`}/>
+                                        </label>
+                                        
+                                        <label className={`flex items-center p-4 border rounded-xl cursor-pointer transition-all ${isSpecialRequest ? 'border-purple-500 bg-purple-50/30 ring-1 ring-purple-500' : 'border-slate-200 hover:border-slate-300'}`}>
+                                            <input type="radio" checked={isSpecialRequest} onChange={() => { setIsSpecialRequest(true); setGroupMembers(['']); }} className="w-5 h-5 text-purple-600 border-gray-300 focus:ring-purple-500 mr-3"/>
+                                            <div className="flex-1">
+                                                <span className="font-bold text-slate-700 block">Special Request</span>
+                                                <span className="text-xs text-slate-500">1-2 people (Interview, Meeting, etc.)</span>
+                                            </div>
+                                            <Star className={`w-5 h-5 ${isSpecialRequest ? 'text-purple-500' : 'text-slate-300'}`}/>
+                                        </label>
+                                    </div>
+
+                                    {isSpecialRequest && (
+                                        <div className="mb-8 p-6 bg-purple-50/50 rounded-2xl border border-purple-100 animate-enter">
+                                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                                <div className="input-group">
+                                                    <label className="block text-xs font-bold text-purple-700 uppercase mb-2 ml-1">Reason</label>
+                                                    <div className="relative">
+                                                        <Briefcase className="w-4 h-4 absolute left-3 top-3 text-purple-400"/>
+                                                        <select value={specialReason} onChange={e => setSpecialReason(e.target.value)} className="w-full pl-10 p-2.5 bg-white border border-purple-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 transition-all appearance-none cursor-pointer">
+                                                            <option>Interview</option><option>Meeting</option><option>Other</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div className="input-group">
+                                                    <label className="block text-xs font-bold text-purple-700 uppercase mb-2 ml-1">People</label>
+                                                    <div className="relative">
+                                                        <Users className="w-4 h-4 absolute left-3 top-3 text-purple-400"/>
+                                                        <select value={specialSize} onChange={e => { setSpecialSize(parseInt(e.target.value)); setGroupMembers(new Array(parseInt(e.target.value)).fill('')); }} className="w-full pl-10 p-2.5 bg-white border border-purple-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 transition-all appearance-none cursor-pointer">
+                                                            <option value="1">1 Person</option><option value="2">2 People</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="input-group">
+                                                <label className="block text-xs font-bold text-purple-700 uppercase mb-2 ml-1">Details (Optional)</label>
+                                                <textarea value={specialComment} onChange={e => setSpecialComment(e.target.value)} placeholder="Additional context..." className="w-full p-3 bg-white border border-purple-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 h-20 resize-none transition-all"></textarea>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-4 mb-8">
+                                        <div className="flex items-center justify-between px-1">
+                                            <span className="text-xs font-bold text-slate-400 uppercase">Group Members</span>
+                                            <span className="text-xs text-slate-400">{groupMembers.length} Slots</span>
+                                        </div>
+                                        {groupMembers.map((name, i) => (
+                                            <div key={i} className="input-group relative">
+                                                <User className={`w-4 h-4 absolute left-4 top-4 transition-colors ${i===0 ? 'text-indigo-500' : 'text-slate-400'}`}/>
+                                                <input 
+                                                    value={name} 
+                                                    onChange={e => { const n = [...groupMembers]; n[i] = e.target.value; setGroupMembers(n); }} 
+                                                    placeholder={i===0 ? "Primary Requester Name" : `Member ${i+1} Name`} 
+                                                    className={`w-full pl-12 p-3.5 bg-slate-50 border rounded-xl outline-none focus:bg-white focus:ring-2 transition-all ${i===0 ? 'border-indigo-200 focus:ring-indigo-500' : 'border-slate-200 focus:ring-slate-400'}`}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <button onClick={submitBooking} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg shadow-indigo-200 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 text-lg
+                                        ${bookingRole === 'student' 
+                                            ? 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700' 
+                                            : 'bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700'}`}>
+                                        Submit Request <ChevronRight className="w-5 h-5"/>
+                                    </button>
                                 </div>
-                                <button onClick={submitBooking} className="w-full py-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg">Confirm</button>
                             </section>
                         )}
 
                         {/* Admin Queue */}
                         <section className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm animate-enter">
-                            <div className="flex justify-between items-center mb-6">
+                            <div className="flex justify-between items-center mb-8 pb-6 border-b border-slate-100">
                                 <h3 className="text-xl font-bold text-slate-800 flex items-center">
-                                    <LayoutDashboard className="w-5 h-5 mr-2 text-slate-500"/> 
-                                    {isAdminLoggedIn ? 'Live Queue' : 'Admin Access Required'}
+                                    <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center mr-3 text-slate-500">
+                                        <LayoutDashboard className="w-5 h-5"/> 
+                                    </div>
+                                    {isAdminLoggedIn ? 'Live Queue' : 'Admin Access'}
                                 </h3>
                                 {isAdminLoggedIn && (
-                                    <div className="flex bg-slate-100 p-1 rounded-lg">
-                                        <button onClick={() => setAdminViewRole('student')} className={`px-3 py-1 text-xs font-bold rounded ${adminViewRole === 'student' ? 'bg-white shadow' : ''}`}>Students</button>
-                                        <button onClick={() => setAdminViewRole('faculty')} className={`px-3 py-1 text-xs font-bold rounded ${adminViewRole === 'faculty' ? 'bg-white shadow' : ''}`}>Faculty</button>
+                                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                                        <button onClick={() => setAdminViewRole('student')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminViewRole === 'student' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Students</button>
+                                        <button onClick={() => setAdminViewRole('faculty')} className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminViewRole === 'faculty' ? 'bg-white shadow text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>Faculty</button>
                                     </div>
                                 )}
                             </div>
 
                             {isAdminLoggedIn ? (
-                                <div className="space-y-3">
+                                <div className="space-y-4">
                                     {(adminViewRole === 'student' ? studentBookings : facultyBookings).filter(b => b.status === 'Pending' || b.status === 'Approved').map(b => (
-                                        <div key={b.id} className="flex justify-between items-center p-4 bg-white border rounded-xl shadow-sm">
-                                            <div>
-                                                <div className="font-bold">{b.cabinId} <span className="text-slate-400 text-xs font-normal">({b.requesterName})</span></div>
-                                                {b.bookingType === 'Special' && <span className="text-xs bg-purple-100 text-purple-700 px-1 rounded">Special: {b.specialReason}</span>}
+                                        <div key={b.id} className="group flex flex-col md:flex-row justify-between items-center p-5 bg-white border border-slate-100 hover:border-indigo-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                                            <div className="mb-4 md:mb-0 w-full md:w-auto">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <span className={`w-2.5 h-2.5 rounded-full ${b.status === 'Pending' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                                                    <span className="font-bold text-lg text-slate-800">{b.cabinId}</span>
+                                                    {b.bookingType === 'Special' && <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center"><Star className="w-3 h-3 mr-1"/>Special</span>}
+                                                </div>
+                                                <div className="text-sm text-slate-500 flex items-center gap-3">
+                                                    <span className="flex items-center"><User className="w-3.5 h-3.5 mr-1.5 text-slate-400"/> {b.requesterName}</span>
+                                                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                                    <span className="flex items-center"><Users className="w-3.5 h-3.5 mr-1.5 text-slate-400"/> {b.groupMembers.length}</span>
+                                                </div>
+                                                {b.specialComment && <div className="mt-2 text-xs bg-purple-50 p-2 rounded-lg text-purple-700 border border-purple-100 italic max-w-md">"{b.specialComment}"</div>}
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-3 w-full md:w-auto">
                                                 {b.status === 'Pending' ? (
-                                                    <><button onClick={() => updateBookingStatus(b, 'Approved')} className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded font-bold text-xs">Approve</button>
-                                                    <button onClick={() => updateBookingStatus(b, 'Rejected')} className="px-3 py-1 bg-red-100 text-red-700 rounded font-bold text-xs">Reject</button></>
+                                                    <React.Fragment>
+                                                        <button onClick={() => updateBookingStatus(b, 'Approved')} className="flex-1 md:flex-none px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl font-bold text-xs hover:bg-emerald-100 transition-colors">Approve</button>
+                                                        <button onClick={() => updateBookingStatus(b, 'Rejected')} className="flex-1 md:flex-none px-4 py-2 bg-red-50 text-red-700 border border-red-100 rounded-xl font-bold text-xs hover:bg-red-100 transition-colors">Reject</button>
+                                                    </React.Fragment>
                                                 ) : (
-                                                    <button onClick={() => updateBookingStatus(b, 'Completed')} className="px-3 py-1 bg-slate-100 text-slate-600 rounded font-bold text-xs">End</button>
+                                                    <button onClick={() => updateBookingStatus(b, 'Completed')} className="w-full md:w-auto px-5 py-2 bg-slate-100 text-slate-600 border border-slate-200 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors">Force End</button>
                                                 )}
                                             </div>
                                         </div>
                                     ))}
-                                    {(adminViewRole === 'student' ? studentBookings : facultyBookings).filter(b => b.status === 'Pending' || b.status === 'Approved').length === 0 && <div className="text-center text-slate-400 text-sm">No requests</div>}
+                                    {(adminViewRole === 'student' ? studentBookings : facultyBookings).filter(b => b.status === 'Pending' || b.status === 'Approved').length === 0 && (
+                                        <div className="text-center py-12">
+                                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300">
+                                                <CheckCircle className="w-8 h-8"/>
+                                            </div>
+                                            <p className="text-slate-400 font-medium">All caught up! No active requests.</p>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
-                                <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed">
-                                    <ShieldCheck className="w-8 h-8 mx-auto text-slate-300 mb-2"/>
-                                    <p className="text-sm text-slate-500 mb-4">Librarian access only.</p>
-                                    <button onClick={handleLogin} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold">Login</button>
+                                <div className="text-center py-12 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-4 text-slate-400">
+                                        <ShieldCheck className="w-8 h-8"/>
+                                    </div>
+                                    <h4 className="text-lg font-bold text-slate-700 mb-1">Restricted Area</h4>
+                                    <p className="text-sm text-slate-500 mb-6">Librarian access is required to view the queue.</p>
+                                    <button onClick={handleLogin} className="px-6 py-2.5 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-all shadow-lg shadow-slate-200 hover:shadow-xl hover:-translate-y-0.5">
+                                        Login as Librarian
+                                    </button>
                                 </div>
                             )}
                         </section>
                     </main>
+                    
+                    <footer className="mt-20 py-8 text-center text-slate-400 text-xs font-medium border-t border-slate-200/60 bg-white/50 backdrop-blur-sm">
+                        <p>© {new Date().getFullYear()} CabinControl System • Optimized for Collaborative Learning</p>
+                    </footer>
                 </div>
             );
         };

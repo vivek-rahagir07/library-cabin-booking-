@@ -65,14 +65,14 @@
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useCallback, useMemo } from 'https://esm.sh/react@18.2.0';
+        import React, { useState, useEffect, useCallback, useMemo, useRef } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, GraduationCap, LayoutDashboard, Lock, Unlock, ShieldCheck } from 'https://esm.sh/lucide-react@0.263.1';
+        import { Clock, User, LogOut, Download, AlertTriangle, CheckCircle, XCircle, Users, BookOpen, Zap, Filter, Info, Star, Briefcase, MessageSquare, ChevronRight, GraduationCap, LayoutDashboard, Lock, Unlock, ShieldCheck, WifiOff } from 'https://esm.sh/lucide-react@0.263.1';
         
         // Firebase Imports (Stable Version)
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
-        import { getFirestore, doc, addDoc, onSnapshot, collection, query, updateDoc, deleteDoc, Timestamp, setLogLevel } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
 
         // --- Global Constants and Firebase Initialization ---
 
@@ -88,15 +88,12 @@
           appId: "1:712017475970:web:760a61d2bcbde376eff79b",
           measurementId: "G-XEHSTZ2SYD"
         };
-        
-        // Demo Mode Detection
-        const isDemoMode = false;
 
         const CABIN_COUNT = 15;
         const BOOKING_DURATION_HOURS = 2;
         
-        // Unified Collection to fix Permission Error, but we filter logic separately
-        const BOOKINGS_COLLECTION = `artifacts/${appId}/public/data/cabinBookings`;
+        // Simplified Collection Path to reduce permission complexity
+        const BOOKINGS_COLLECTION = "cabin_bookings";
 
         const cabinCapacities = [4, 5, 6];
         const initialCabins = Array.from({ length: CABIN_COUNT }, (_, i) => ({
@@ -148,7 +145,7 @@
                     status: 'Occupied', 
                     name: activeBooking.requesterName, 
                     endTime: activeBooking.timestamp.getTime() + BOOKING_DURATION_HOURS * 60 * 60 * 1000,
-                    role: b.role // Track who occupied it
+                    role: activeBooking.role // Fixed ReferenceError: changed b.role to activeBooking.role
                 };
             }
 
@@ -215,6 +212,9 @@
             const [auth, setAuth] = useState(null);
             const [isAuthReady, setIsAuthReady] = useState(false);
             const [userId, setUserId] = useState(null);
+            
+            // Core State: Demo Mode
+            const [isDemoMode, setIsDemoMode] = useState(false);
 
             // Separate states, but populated from one source
             const [studentBookings, setStudentBookings] = useState([]);
@@ -250,13 +250,10 @@
 
             // Init Effect
             useEffect(() => {
-                if (isDemoMode) {
-                    console.warn("Running in Demo Mode");
-                    setUserId("demo-user-123");
-                    setIsAuthReady(true);
-                    setStudentBookings([{
-                        id: 'mock-1', cabinId: 'C1', status: 'Approved', requesterId: 'other', requesterName: 'Alice', groupMembers: ['Alice', 'Bob'], timestamp: new Date(), durationHours: 2, capacity: 4, role: 'student'
-                    }]);
+                // Initial check - if no config, default to demo immediately
+                if (!firebaseConfig) {
+                    console.warn("No Firebase Config found. Defaulting to Demo.");
+                    setDemoModeActive();
                     return;
                 }
 
@@ -268,7 +265,11 @@
                     setAuth(auther);
 
                     const initAuth = async () => { await signInAnonymously(auther); };
-                    initAuth().catch(error => { console.error("Auth failed:", error); alertUser("Auth failed", "bg-red-500 text-white"); });
+                    
+                    initAuth().catch(error => { 
+                        console.error("Auth failed:", error); 
+                        setDemoModeActive("Auth failed. Switched to Offline Mode.");
+                    });
 
                     const unsubscribe = onAuthStateChanged(auther, (user) => {
                         if (user) {
@@ -277,12 +278,36 @@
                         }
                     });
                     return () => unsubscribe();
-                } catch (err) { console.error(err); }
-            }, [alertUser]);
+                } catch (err) { 
+                    console.error("Firebase Init Error:", err);
+                    setDemoModeActive("Config Error. Switched to Offline Mode.");
+                }
+            }, []);
+
+            // Helper to activate demo mode with data
+            const setDemoModeActive = (reason = "") => {
+                setIsDemoMode(true);
+                setUserId("demo-user-123");
+                setIsAuthReady(true);
+                // Seed some mock data
+                const mockStudent = {
+                    id: 'mock-1', cabinId: 'C1', status: 'Approved', requesterId: 'other', requesterName: 'Alice', groupMembers: ['Alice', 'Bob'], timestamp: new Date(), durationHours: 2, capacity: 4, role: 'student'
+                };
+                const mockFaculty = {
+                    id: 'mock-2', cabinId: 'C5', status: 'Pending', requesterId: 'prof', requesterName: 'Dr. Smith', groupMembers: ['Dr. Smith'], timestamp: new Date(), durationHours: 2, capacity: 5, role: 'faculty'
+                };
+                setStudentBookings([mockStudent]);
+                setFacultyBookings([mockFaculty]);
+                
+                if (reason) {
+                    alertUser(<><WifiOff className="w-5 h-5"/> <span>{reason}</span></>, "bg-slate-700 text-white");
+                }
+            };
 
             // Single Realtime Listener for BOOKINGS_COLLECTION
             useEffect(() => {
                 if (isDemoMode) {
+                    // In demo mode, recalculate user booking from local state
                     const current = allBookings.find(b => b.requesterId === userId && b.status !== 'Completed' && b.status !== 'Rejected' && !b.completionTime);
                     setUserBooking(current);
                     return;
@@ -316,23 +341,29 @@
                     setFacultyBookings(faculty);
                 }, (error) => {
                     console.error("Error fetching bookings:", error);
-                    // This error typically means rules denial
-                    alertUser(<span>Access Denied. Check Firebase Rules.</span>, "bg-red-600 text-white");
+                    // CRITICAL FIX: If permission denied, fallback gracefully to Demo Mode instead of crashing
+                    if (error.code === 'permission-denied' || error.message.includes('permission') || error.message.includes('Missing or insufficient permissions')) {
+                        setDemoModeActive("Database locked. Switched to Offline Demo.");
+                    } else {
+                        alertUser("Connection Error", "bg-red-500 text-white");
+                    }
                 });
 
                 return () => unsub();
-            }, [db, isAuthReady, userId]);
+            }, [db, isAuthReady, userId, isDemoMode]);
 
-            // Determine User Booking from merged list
+            // Update user booking when data changes
             useEffect(() => {
-                const current = allBookings.find(b => 
-                    b.requesterId === userId && 
-                    b.status !== 'Completed' && 
-                    b.status !== 'Rejected' && 
-                    !b.completionTime
-                );
-                setUserBooking(current);
-            }, [allBookings, userId]);
+                if (!isDemoMode && allBookings.length > 0) {
+                    const current = allBookings.find(b => 
+                        b.requesterId === userId && 
+                        b.status !== 'Completed' && 
+                        b.status !== 'Rejected' && 
+                        !b.completionTime
+                    );
+                    setUserBooking(current);
+                }
+            }, [allBookings, userId, isDemoMode]);
 
 
             // --- Logic ---
@@ -376,7 +407,7 @@
                     requesterName: filledMembers[0],
                     requesterId: userId,
                     groupMembers: filledMembers,
-                    timestamp: Timestamp.now(),
+                    timestamp: isDemoMode ? new Date() : Timestamp.now(),
                     durationHours: BOOKING_DURATION_HOURS,
                     status: 'Pending',
                     approvedBy: null,
@@ -392,6 +423,8 @@
                     if (bookingRole === 'student') setStudentBookings(p => [...p, mock]);
                     else setFacultyBookings(p => [...p, mock]);
                     alertUser("Submitted (Demo)", "bg-emerald-500 text-white");
+                    // Reset Form
+                    setSelectedCabinId('');
                     return;
                 }
                 
@@ -402,26 +435,48 @@
                     alertUser("Request Submitted!", "bg-emerald-500 text-white");
                 } catch (error) {
                     console.error(error);
-                    alertUser("Submission Failed", "bg-red-500 text-white");
+                    if (error.code === 'permission-denied') {
+                        setDemoModeActive("Permission Denied. Switched to Demo.");
+                    } else {
+                        alertUser("Submission Failed", "bg-red-500 text-white");
+                    }
                 }
-            }, [isAuthReady, userBooking, selectedCabinId, groupMembers, allBookings, userId, bookingRole, isSpecialRequest, specialSize, specialReason, specialComment, db]);
+            }, [isAuthReady, userBooking, selectedCabinId, groupMembers, allBookings, userId, bookingRole, isSpecialRequest, specialSize, specialReason, specialComment, db, isDemoMode]);
 
             const cancelBooking = useCallback(async () => {
-                if (!userBooking || !db) return;
+                if (!userBooking) return;
+                
+                if (isDemoMode) {
+                    if (userBooking.role === 'student') setStudentBookings(p => p.filter(b => b.id !== userBooking.id));
+                    else setFacultyBookings(p => p.filter(b => b.id !== userBooking.id));
+                    setUserBooking(null);
+                    alertUser("Cancelled (Demo)", "bg-sky-500 text-white");
+                    return;
+                }
+
+                if (!db) return;
                 try {
-                    // Always use BOOKINGS_COLLECTION
                     await deleteDoc(doc(db, BOOKINGS_COLLECTION, userBooking.id));
                     alertUser("Cancelled", "bg-sky-500 text-white");
                 } catch (error) { console.error(error); }
-            }, [userBooking, db]);
+            }, [userBooking, db, isDemoMode]);
             
             const completeBooking = useCallback(async () => {
-                if (!userBooking || !db) return;
+                if (!userBooking) return;
+                
+                if (isDemoMode) {
+                    const updater = userBooking.role === 'student' ? setStudentBookings : setFacultyBookings;
+                    updater(prev => prev.map(b => b.id === userBooking.id ? { ...b, status: 'Completed', completionTime: new Date() } : b));
+                    alertUser("Checked Out (Demo)", "bg-emerald-500 text-white");
+                    return;
+                }
+
+                if (!db) return;
                 try {
                     await updateDoc(doc(db, BOOKINGS_COLLECTION, userBooking.id), { status: 'Completed', completionTime: Timestamp.now() });
                     alertUser("Checked Out", "bg-emerald-500 text-white");
                 } catch (error) { console.error(error); }
-            }, [userBooking, db]);
+            }, [userBooking, db, isDemoMode]);
 
             // Admin Actions
             const performAdminLogin = (password) => {
@@ -433,13 +488,11 @@
                 }
             };
             
-            // Re-bind action to current state in render or ensure state is accessible. 
-            // Since `adminPasswordInput` is state, we need to ensure the closure captures the *current* value when 'Login' is clicked. 
-            // Ideally, we'd use a ref for the input value to avoid closure staleness in the 'action' callback defined at render time.
-            const passwordRef = React.useRef('');
+            // Password Ref to capture input inside Modal
+            const passwordRef = useRef('');
             
             const handleLoginClick = () => {
-                passwordRef.current = ''; // Reset
+                passwordRef.current = ''; 
                 setModal({
                     title: "Librarian Login",
                     message: "Enter password to manage requests.",
@@ -455,6 +508,12 @@
             };
 
             const updateBookingStatus = useCallback(async (booking, newStatus) => {
+                if (isDemoMode) {
+                    const updater = booking.role === 'student' ? setStudentBookings : setFacultyBookings;
+                    updater(prev => prev.map(b => b.id === booking.id ? { ...b, status: newStatus } : b));
+                    return;
+                }
+
                 if (!db) return;
                 try {
                     const updateData = { status: newStatus };
@@ -464,7 +523,7 @@
                     }
                     await updateDoc(doc(db, BOOKINGS_COLLECTION, booking.id), updateData);
                 } catch (error) { console.error(error); }
-            }, [db]);
+            }, [db, isDemoMode]);
 
             // --- Render Helpers ---
 
@@ -578,6 +637,8 @@
                                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">CabinControl</h1>
                             </div>
                             <div className="flex items-center gap-4">
+                                {isDemoMode && <div className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-1 rounded border border-slate-300">OFFLINE MODE</div>}
+                                
                                 {/* Librarian Login Button */}
                                 {!isAdminLoggedIn ? (
                                     <button onClick={handleLoginClick} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors">

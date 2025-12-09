@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CabinControl: Campus Study Space Booking</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <!-- Use Inter font from Google Fonts -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+    </style>
+</head>
+<body class="bg-slate-50 font-sans">
+
+    <!-- Root container where the app will be rendered -->
+    <div id="app-root">
+        <div class="min-h-screen flex items-center justify-center bg-slate-100 p-8">
+            <div class="text-gray-500 font-semibold flex items-center space-x-2">
+                <svg class="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Loading application...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Block for Firebase and Application Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, updateDoc, deleteDoc, Timestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL CONFIGURATION AND STATE ---
+        const LOCAL_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyCHimNRSSB4ZoqLCu5Okq4yL0i85EMzUIU",
+            authDomain: "library-booking-83e2a.firebaseapp.com",
+            projectId: "library-booking-83e2a",
+            storageBucket: "library-booking-83e2a.firebasestorage.app",
+            messagingSenderId: "712017475970",
+            appId: "1:712017475970:web:760a61d2bcbde376eff79b",
+            measurementId: "G-XEHSTZ2SYD"
+        };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let firebaseConfig = null;
+        if (typeof __firebase_config !== 'undefined') {
+            firebaseConfig = JSON.parse(__firebase_config);
+        } else {
+            console.warn("Using local Firebase configuration fallback for testing.");
+            firebaseConfig = LOCAL_FIREBASE_CONFIG;
+        }
+
+        const CABIN_COUNT = 15;
+        const BOOKING_DURATION_HOURS = 2;
+        const BOOKINGS_COLLECTION = `artifacts/${appId}/public/data/cabinBookings`;
+
+        const cabinCapacities = [4, 5, 6];
+        const initialCabins = Array.from({ length: CABIN_COUNT }, (_, i) => ({
+            id: `C${i + 1}`,
+            name: `Cabin ${i + 1}`,
+            capacity: cabinCapacities[i % 3],
+        }));
+
+        // Application State (Replicating React state)
+        let state = {
+            db: null,
+            auth: null,
+            isAuthReady: false,
+            userId: null,
+            allBookings: [],
+            userBooking: null, // Active or Pending booking for the current user
+            selectedCabinId: '',
+            selectedCapacity: 0,
+            groupMembers: [],
+            capacityFilter: '',
+            alert: { message: '', classes: '', visible: false },
+            modal: null,
+        };
+
+        // --- UTILITY FUNCTIONS ---
+
+        /** Function to create Lucide icons (simplified SVG injection) */
+        const createIcon = (name, classes = "w-5 h-5") => {
+            const icons = {
+                Clock: `<path d="M12 2v10l4 4"/><circle cx="12" cy="12" r="10"/>`,
+                User: `<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`,
+                LogOut: `<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>`,
+                Download: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>`,
+                AlertTriangle: `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>`,
+                CheckCircle: `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`,
+                XCircle: `<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>`,
+                Users: `<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
+                BookOpen: `<path d="M2 17l6 2 6-2 6 2V5l-6-2-6 2-6-2z"/><path d="M12 2v15"/><path d="M12 22v-5"/>`,
+                Zap: `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`,
+                Filter: `<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>`
+            };
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("class", classes);
+            svg.setAttribute("fill", "none");
+            svg.setAttribute("viewBox", "0 0 24 24");
+            svg.setAttribute("stroke", "currentColor");
+            svg.setAttribute("stroke-width", "2");
+            svg.innerHTML = icons[name] || '';
+            return svg;
+        };
+
+        /** Updates a part of the global state and re-renders the app */
+        const setState = (newState) => {
+            state = { ...state, ...newState };
+            renderApp();
+        };
+
+        /** Displays a notification (toast) */
+        const alertUser = (messageHtml, classes) => {
+            setState({ alert: { message: messageHtml, classes: classes, visible: true } });
+            setTimeout(() => {
+                setState({ alert: { ...state.alert, visible: false } });
+            }, 6000);
+        };
+
+        /** Shows the confirmation modal */
+        const showModal = (title, message, confirmText, action) => {
+            setState({ modal: { title, message, confirmText, action } });
+        };
+
+        /** Closes the confirmation modal */
+        const closeModal = () => {
+            setState({ modal: null });
+        };
+
+        /** Calculates cabin status based on current bookings. */
+        const getCabinStatus = (cabinId, allBookings) => {
+            const now = new Date();
+            
+            const activeBooking = allBookings.find(b =>
+                b.cabinId === cabinId &&
+                b.status === 'Approved' &&
+                !b.completionTime && 
+                b.timestamp && 
+                (b.timestamp.getTime() + BOOKING_DURATION_HOURS * 60 * 60 * 1000) > now.getTime()
+            );
+
+            if (activeBooking) {
+                const startTime = activeBooking.timestamp.getTime();
+                return { 
+                    status: 'Occupied', 
+                    name: activeBooking.requesterName, 
+                    endTime: startTime + BOOKING_DURATION_HOURS * 60 * 60 * 1000 
+                };
+            }
+
+            const pendingBooking = allBookings.find(b =>
+                b.cabinId === cabinId &&
+                b.status === 'Pending'
+            );
+
+            if (pendingBooking) {
+                return { status: 'Pending Approval', name: pendingBooking.requesterName };
+            }
+
+            return { status: 'Available', name: null };
+        };
+
+
+        // --- FIREBASE AND AUTHENTICATION ---
+
+        const initFirebase = async () => {
+            if (!firebaseConfig || !firebaseConfig.projectId) {
+                alertUser(`<span>Firebase config missing.</span>`, 'bg-red-600 text-white');
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                const db = getFirestore(app);
+                const auth = getAuth(app);
+                
+                setState({ db, auth });
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        setState({ userId: user.uid, isAuthReady: true });
+                        startBookingsListener();
+                    } else {
+                        setState({ isAuthReady: true });
+                    }
+                });
+            } catch (err) {
+                console.error("Firebase init failed:", err);
+                alertUser(`<span>App Initialization Failed</span>`, 'bg-red-600 text-white');
+            }
+        };
+        
+        // --- FIREBASE LISTENERS ---
+        
+        let unsubscribeBookings = null;
+
+        const startBookingsListener = () => {
+            if (!state.db || !state.isAuthReady || !state.userId || unsubscribeBookings) return;
+            
+            const q = query(collection(state.db, BOOKINGS_COLLECTION));
+            
+            unsubscribeBookings = onSnapshot(q, (snapshot) => {
+                const bookings = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const booking = { id: doc.id, ...data };
+                    
+                    // Convert Firestore Timestamps to JS Dates safely
+                    if (booking.timestamp && typeof booking.timestamp.toDate === 'function') {
+                        booking.timestamp = booking.timestamp.toDate();
+                    }
+                    if (booking.completionTime && typeof booking.completionTime.toDate === 'function') {
+                        booking.completionTime = booking.completionTime.toDate();
+                    }
+                    
+                    if (booking.timestamp instanceof Date && !isNaN(booking.timestamp.getTime())) {
+                        bookings.push(booking);
+                    }
+                });
+                
+                // Find current user's active/pending booking
+                const now = new Date().getTime();
+                const currentBooking = bookings.find(b => 
+                    b.requesterId === state.userId && 
+                    b.status === 'Approved' && 
+                    !b.completionTime && 
+                    (b.timestamp.getTime() + BOOKING_DURATION_HOURS * 60 * 60 * 1000) > now
+                );
+                
+                const pendingRequest = bookings.find(b => 
+                    b.requesterId === state.userId && 
+                    b.status === 'Pending'
+                );
+
+                setState({ allBookings: bookings, userBooking: currentBooking || pendingRequest || null });
+
+            }, (error) => {
+                console.error("Error fetching bookings:", error);
+                alertUser(`<span>Connection error. Retrying...</span>`, 'bg-red-600 text-white');
+            });
+        };
+
+        // --- BOOKING ACTIONS ---
+
+        const selectCabin = (cabinId, capacity) => {
+            setState({ 
+                selectedCabinId: cabinId, 
+                selectedCapacity: capacity,
+                // Initialize member inputs based on capacity
+                groupMembers: new Array(capacity).fill('').map((_, i) => i === 0 ? '' : ''),
+            });
+            setTimeout(() => {
+                document.getElementById('student-request-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100); 
+        };
+
+        const submitBooking = async () => {
+            if (!state.isAuthReady || state.userBooking) {
+                alertUser(`<span>Active request or session exists. Wait for completion.</span>`, 'bg-amber-500 text-gray-900');
+                return;
+            }
+
+            if (!state.selectedCabinId || state.selectedCapacity === 0) {
+                alertUser(`<span>Please select a cabin.</span>`, 'bg-red-600 text-white');
+                return;
+            }
+            
+            const form = document.getElementById('request-form-fields');
+            const filledMembers = Array.from(form.querySelectorAll('input')).map(input => input.value.trim());
+
+            if (!filledMembers[0]) {
+                alertUser(`<span>Primary Requester name is required.</span>`, 'bg-red-600 text-white');
+                return;
+            }
+
+            const requiredMembers = filledMembers.slice(0, state.selectedCapacity).filter(name => name.length > 0);
+            if (requiredMembers.length < state.selectedCapacity) {
+                alertUser(`<span>All ${state.selectedCapacity} member slots must be filled.</span>`, 'bg-red-600 text-white');
+                return;
+            }
+
+            if (getCabinStatus(state.selectedCabinId, state.allBookings).status !== 'Available') {
+                alertUser(`<span>Cabin taken! Please select another.</span>`, 'bg-red-600 text-white');
+                return;
+            }
+            
+            try {
+                await addDoc(collection(state.db, BOOKINGS_COLLECTION), {
+                    cabinId: state.selectedCabinId,
+                    capacity: state.selectedCapacity,
+                    requesterName: requiredMembers[0],
+                    requesterId: state.userId,
+                    groupMembers: requiredMembers,
+                    timestamp: Timestamp.now(),
+                    durationHours: BOOKING_DURATION_HOURS,
+                    status: 'Pending',
+                    approvedBy: null,
+                    completionTime: null,
+                });
+                
+                setState({ selectedCabinId: '', selectedCapacity: 0, groupMembers: [] });
+                alertUser(`<span>Request submitted for approval!</span>`, 'bg-emerald-600 text-white');
+            } catch (error) {
+                console.error("Submission error:", error);
+                alertUser(`<span>Submission failed.</span>`, 'bg-red-600 text-white');
+            }
+        };
+
+        const cancelBooking = async () => {
+            if (!state.userBooking || !state.db) return;
+            try {
+                await deleteDoc(doc(state.db, BOOKINGS_COLLECTION, state.userBooking.id));
+                alertUser(`<span>Request cancelled.</span>`, 'bg-sky-600 text-white');
+            } catch (error) {
+                console.error("Cancel error:", error);
+                alertUser(`<span>Error cancelling request.</span>`, 'bg-red-600 text-white');
+            }
+        };
+        
+        const completeBookingEarly = async () => {
+            if (!state.userBooking || state.userBooking.status !== 'Approved' || !state.db) return;
+            
+            try {
+                await updateDoc(doc(state.db, BOOKINGS_COLLECTION, state.userBooking.id), {
+                    status: 'Completed',
+                    completionTime: Timestamp.now(),
+                });
+                alertUser(`<span>Checked out. Session complete.</span>`, 'bg-emerald-600 text-white');
+            } catch (error) {
+                console.error("Checkout error:", error);
+                alertUser(`<span>Checkout failed.</span>`, 'bg-red-600 text-white');
+            }
+        };
+
+        const updateBookingStatus = async (bookingId, newStatus) => {
+            if (!state.isAuthReady || !state.db) return;
+            
+            const facultyName = `Admin (${state.userId ? state.userId.substring(0, 4) : 'N/A'})`; 
+            const updateData = { status: newStatus };
+
+            if (newStatus === 'Approved') {
+                updateData.approvedBy = facultyName;
+                updateData.timestamp = Timestamp.now(); 
+                updateData.completionTime = null;
+            } else if (newStatus === 'Completed') {
+                updateData.completionTime = Timestamp.now();
+            }
+
+            try {
+                await updateDoc(doc(state.db, BOOKINGS_COLLECTION, bookingId), updateData);
+            } catch (error) {
+                console.error("Update error:", error);
+                alertUser(`<span>Action failed.</span>`, 'bg-red-600 text-white');
+            }
+        };
+
+        const exportCSV = () => {
+            if (!state.allBookings.length) {
+                 alertUser(`<span>No data to export.</span>`, 'bg-amber-500 text-gray-900');
+                 return;
+            }
+            
+            const headers = ["ID","Cabin","Capacity","Status","Requester","RequesterID","GroupMembers","DurationHours","Timestamp","CompletionTime","ApprovedBy"];
+            
+            const validBookings = state.allBookings.filter(b => b.timestamp instanceof Date && !isNaN(b.timestamp.getTime()));
+
+            const rows = validBookings.map(b => {
+                 const timeStr = b.timestamp?.toISOString ? b.timestamp.toISOString() : '';
+                 const completionStr = b.completionTime?.toISOString ? b.completionTime.toISOString() : '';
+                 
+                 const membersStr = `"${(b.groupMembers || []).join('; ')}"`; 
+                 const requesterNameStr = `"${b.requesterName}"`;
+
+                 return [
+                     b.id,
+                     b.cabinId,
+                     b.capacity,
+                     b.status,
+                     requesterNameStr,
+                     b.requesterId,
+                     membersStr,
+                     b.durationHours,
+                     timeStr,
+                     completionStr,
+                     b.approvedBy || ''
+                 ].join(',');
+            });
+            
+            const csvContent = headers.join(',') + '\n' + rows.join('\n');
+            
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+            link.download = `bookings-export-${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            
+            alertUser(`<span>Export started!</span>`, 'bg-indigo-600 text-white');
+        };
+
+        // --- RENDERING FUNCTIONS (DOM MANIPULATION) ---
+
+        /** Global interval timer for the active session countdown */
+        let countdownInterval;
+
+        const renderApp = () => {
+            const root = document.getElementById('app-root');
+            if (!root) return;
+
+            // Clear the existing content
+            root.innerHTML = '';
+            
+            // --- 1. Alert Component ---
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `fixed top-6 right-6 p-5 rounded-xl text-left font-semibold shadow-2xl transition-all duration-700 ease-out z-50 
+                flex items-center space-x-3 backdrop-blur-md border border-white/20
+                ${state.alert.classes} ${state.alert.visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}
+            `;
+            alertDiv.role = "alert";
+            alertDiv.innerHTML = state.alert.message;
+            root.appendChild(alertDiv);
+            
+            // --- 2. Confirmation Modal ---
+            if (state.modal) {
+                const modalDiv = document.createElement('div');
+                modalDiv.className = "fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex justify-center items-center z-50 transition-all duration-300";
+                modalDiv.innerHTML = `
+                    <div class="bg-white text-gray-900 p-8 rounded-3xl shadow-2xl w-full max-w-md mx-4 border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-3">${state.modal.title}</h3>
+                        <p class="text-gray-600 mb-8 leading-relaxed">${state.modal.message}</p>
+                        <div class="flex justify-end space-x-3">
+                            <button id="modal-cancel" class="py-2.5 px-5 rounded-xl font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors">
+                                Cancel
+                            </button>
+                            <button id="modal-confirm" class="py-2.5 px-5 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg shadow-red-600/20 transition-all transform active:scale-95">
+                                ${state.modal.confirmText}
+                            </button>
+                        </div>
+                    </div>
+                `;
+                root.appendChild(modalDiv);
+                
+                document.getElementById('modal-cancel').onclick = closeModal;
+                document.getElementById('modal-confirm').onclick = () => {
+                    if (state.modal && state.modal.action) state.modal.action();
+                    closeModal();
+                };
+            }
+
+            // --- 3. Main App Structure ---
+            const mainApp = document.createElement('div');
+            mainApp.className = "min-h-screen bg-slate-50 text-slate-900 pb-20";
+            
+            // Header
+            const header = document.createElement('header');
+            header.className = "bg-indigo-600 text-white pt-12 pb-24 px-4 sm:px-8 shadow-xl";
+            header.innerHTML = `
+                <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-end">
+                    <div>
+                        <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight">CabinControl</h1>
+                        <p class="text-indigo-200 mt-2">Campus Study Space Management</p>
+                    </div>
+                    <div class="text-right mt-4 sm:mt-0">
+                        <div class="text-xs font-mono bg-indigo-700/50 px-3 py-1 rounded-full text-indigo-200">
+                            User ID: ${state.userId ? state.userId.substring(0, 8) + '...' : 'Connecting...'}
+                        </div>
+                    </div>
+                </div>
+            `;
+            mainApp.appendChild(header);
+
+            // Main Content Area
+            const mainContent = document.createElement('main');
+            mainContent.className = "max-w-7xl mx-auto px-4 sm:px-8 -mt-16 space-y-12";
+            mainApp.appendChild(mainContent);
+            
+            // --- 4. User Status Card ---
+            mainContent.appendChild(renderUserStatusCard());
+
+            // --- 5. Cabin Selection Grid ---
+            mainContent.appendChild(renderCabinGridSection());
+
+            // --- 6. Booking Form ---
+            if (state.selectedCabinId && !state.userBooking) {
+                mainContent.appendChild(renderBookingForm());
+            }
+
+            // --- 7. Admin Panel ---
+            mainContent.appendChild(renderAdminPanel());
+
+            root.appendChild(mainApp);
+            
+            // Restart the countdown timer after rendering
+            if (countdownInterval) clearInterval(countdownInterval);
+            if (state.userBooking && state.userBooking.status === 'Approved') {
+                startCountdown(state.userBooking);
+            }
+        };
+
+        const renderUserStatusCard = () => {
+            const section = document.createElement('section');
+            if (!state.userBooking) {
+                section.className = "p-8 bg-white border-2 border-dashed border-gray-300 rounded-2xl text-center shadow-lg";
+                section.appendChild(createIcon('BookOpen', 'w-10 h-10 mx-auto text-gray-400 mb-3'));
+                section.innerHTML += `
+                    <h3 class="text-lg font-semibold text-gray-700">No Active Sessions</h3>
+                    <p class="text-sm text-gray-500">Select a cabin below to start booking.</p>
+                `;
+                return section;
+            }
+            
+            const b = state.userBooking;
+            const isApproved = b.status === 'Approved';
+            const statusColor = isApproved ? 'bg-emerald-500' : 'bg-amber-500';
+            
+            const timerId = 'user-countdown-display';
+            let timerHtml = '';
+            let timerClass = 'text-3xl font-mono font-bold text-emerald-600';
+
+            if (isApproved) {
+                timerHtml = `
+                    <p class="text-xs text-gray-500 font-bold uppercase tracking-wider">Time Remaining</p>
+                    <div id="${timerId}" class="${timerClass}">--:--:--</div>
+                `;
+            } else {
+                timerHtml = `
+                    <p class="text-sm text-gray-500 font-bold uppercase tracking-wider">Requested At</p>
+                    <div class="text-xl font-bold text-amber-600">
+                        ${b.timestamp?.toLocaleTimeString ? b.timestamp.toLocaleTimeString() : 'N/A'}
+                    </div>
+                `;
+            }
+
+            const membersHtml = (b.groupMembers || []).map((name, i) => `
+                <div class="flex items-center text-sm text-gray-700 truncate">
+                    <div class="w-2 h-2 rounded-full mr-2 ${i===0 ? 'bg-indigo-500' : 'bg-gray-400'}"></div>
+                    <span class="${i===0 ? 'font-semibold' : ''}">${name} ${i===0 ? '(Host)' : ''}</span>
+                </div>
+            `).join('');
+
+            section.className = "bg-white border-l-4 border-indigo-600 rounded-r-2xl shadow-lg overflow-hidden";
+            section.innerHTML = `
+                <div class="p-6 sm:p-8">
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <span id="user-status-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold text-white mb-2 ${statusColor}">
+                                <!-- Icon added dynamically -->
+                                ${b.status.toUpperCase()}
+                            </span>
+                            <h2 class="text-3xl font-bold text-gray-900">
+                                ${b.cabinId} 
+                                <span class="text-lg font-normal text-gray-500 ml-2">(${b.capacity} Pax)</span>
+                            </h2>
+                        </div>
+                        <div class="text-right">
+                            ${timerHtml}
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-xl p-4 mb-6">
+                        <h4 class="text-xs font-bold uppercase text-gray-500 mb-2">Group Members (${b.groupMembers.length}/${b.capacity})</h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            ${membersHtml}
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3">
+                        ${isApproved ? `
+                            <button id="checkout-btn" class="flex-1 py-3 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl transition-colors flex items-center justify-center">
+                                <!-- Icon added dynamically --> Check Out
+                            </button>
+                        ` : ''}
+                        <button id="cancel-request-btn" class="${!isApproved ? 'w-full' : 'flex-1'} py-3 px-4 bg-gray-100 hover:bg-red-50 text-gray-600 hover:text-red-600 font-bold rounded-xl transition-colors flex items-center justify-center">
+                            <!-- Icon added dynamically --> Cancel Request
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Insert icons and attach handlers
+            if (isApproved) {
+                section.querySelector('#user-status-badge').prepend(createIcon('CheckCircle', 'w-3 h-3 mr-1'));
+                section.querySelector('#checkout-btn').prepend(createIcon('LogOut', 'w-4 h-4 mr-2'));
+                document.getElementById('checkout-btn').onclick = () => {
+                    showModal(
+                        "End Session Early?",
+                        "This will free up the cabin for other groups immediately.",
+                        "Yes, Check Out",
+                        completeBookingEarly
+                    );
+                };
+            } else {
+                section.querySelector('#user-status-badge').prepend(createIcon('Clock', 'w-3 h-3 mr-1'));
+            }
+            
+            section.querySelector('#cancel-request-btn').prepend(createIcon('LogOut', 'w-4 h-4 mr-2'));
+            document.getElementById('cancel-request-btn').onclick = () => {
+                showModal(
+                    "Terminate Request?",
+                    isApproved 
+                        ? "This will immediately end your active session and free up the cabin."
+                        : "This will permanently remove your pending booking request. You will need to start over.",
+                    isApproved ? "Yes, End Session" : "Yes, Terminate Request",
+                    cancelBooking
+                );
+            };
+
+            return section;
+        };
+
+        const startCountdown = (booking) => {
+            const timerEl = document.getElementById('user-countdown-display');
+            if (!timerEl) return;
+            
+            const startTime = booking.timestamp.getTime();
+
+            const updateTimer = () => {
+                const endTime = startTime + booking.durationHours * 60 * 60 * 1000;
+                const now = new Date().getTime();
+                const distance = endTime - now;
+
+                if (distance < 0) {
+                    timerEl.textContent = 'EXPIRED';
+                    timerEl.classList.remove('animate-pulse', 'text-red-600');
+                    // Auto-complete (fire-and-forget)
+                    if (booking.id && booking.status === 'Approved') {
+                        updateBookingStatus(booking.id, 'Completed');
+                    }
+                    clearInterval(countdownInterval);
+                } else {
+                    const minutesLeft = Math.floor(distance / (1000 * 60));
+                    const isCritical = minutesLeft <= 10;
+                    
+                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                    
+                    timerEl.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                    
+                    // Update classes based on criticality
+                    if (isCritical) {
+                        timerEl.classList.add('animate-pulse', 'text-red-600');
+                        timerEl.classList.remove('text-emerald-600');
+                    } else {
+                        timerEl.classList.remove('animate-pulse', 'text-red-600');
+                        timerEl.classList.add('text-emerald-600');
+                    }
+                }
+            };
+
+            updateTimer();
+            countdownInterval = setInterval(updateTimer, 1000);
+        };
+
+        const renderCabinGridSection = () => {
+            const section = document.createElement('section');
+            
+            // Filter logic
+            const filteredCabins = initialCabins.filter(c => 
+                !state.capacityFilter || c.capacity === parseInt(state.capacityFilter)
+            );
+
+            // Header and Filter
+            const headerDiv = document.createElement('div');
+            headerDiv.className = "flex flex-col sm:flex-row justify-between items-end mb-6 border-b border-gray-200 pb-4";
+            headerDiv.innerHTML = `
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">Available Spaces</h2>
+                    <p class="text-gray-500">Select a cabin to view details</p>
+                </div>
+                <div class="mt-4 sm:mt-0 relative">
+                    <!-- Filter icon added dynamically -->
+                    <select id="capacity-filter" value="${state.capacityFilter}" class="pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm appearance-none">
+                        <option value="">All Capacities</option>
+                        <option value="4">4 Person</option>
+                        <option value="5">5 Person</option>
+                        <option value="6">6 Person</option>
+                    </select>
+                    <svg class="w-4 h-4 text-gray-500 absolute right-3 top-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+            `;
+            headerDiv.querySelector('div.relative').prepend(createIcon('Filter', 'w-4 h-4 text-gray-500 absolute left-3 top-3.5 pointer-events-none'));
+            
+            section.appendChild(headerDiv);
+
+            document.getElementById('capacity-filter')?.addEventListener('change', (e) => {
+                setState({ capacityFilter: e.target.value });
+            });
+
+
+            // Cabin Grid
+            const gridDiv = document.createElement('div');
+            gridDiv.className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4";
+            
+            filteredCabins.forEach(cabin => {
+                const statusInfo = getCabinStatus(cabin.id, state.allBookings);
+                const isAvailable = statusInfo.status === 'Available';
+                const isOccupied = statusInfo.status === 'Occupied';
+                const isSelected = state.selectedCabinId === cabin.id;
+                
+                let statusIconName, borderColor, statusTextColor;
+                let statusText = statusInfo.status;
+
+                if (isAvailable) {
+                    statusIconName = 'CheckCircle';
+                    borderColor = isSelected ? 'border-amber-500 ring-2 ring-amber-200' : 'border-emerald-400/30';
+                    statusTextColor = 'text-emerald-600';
+                } else if (statusInfo.status === 'Pending Approval') {
+                    statusIconName = 'Clock';
+                    borderColor = 'border-amber-400/50';
+                    statusTextColor = 'text-amber-600';
+                } else {
+                    // Occupied
+                    statusIconName = 'XCircle';
+                    borderColor = 'border-red-400/50';
+                    statusTextColor = 'text-red-600';
+                    // The text needs a dynamic timer component, which we'll handle separately
+                    statusText = 'Occupied'; 
+                }
+
+                const isDisabled = !isAvailable || !!state.userBooking;
+                
+                const cabinCard = document.createElement('div');
+                cabinCard.id = `cabin-card-${cabin.id}`;
+                cabinCard.className = `
+                    relative p-5 bg-white rounded-2xl shadow-sm transition-all duration-300 
+                    border-2 ${borderColor}
+                    ${isSelected ? `shadow-lg scale-[1.02] border-4` : ''}
+                    ${isDisabled ? 'opacity-70 grayscale-[0.3]' : 'hover:shadow-md hover:-translate-y-1 cursor-pointer'}
+                `;
+
+                if (!isDisabled) {
+                    cabinCard.onclick = () => selectCabin(cabin.id, cabin.capacity);
+                }
+
+                cabinCard.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="text-xl font-bold text-gray-800">${cabin.name}</h3>
+                        <div class="bg-indigo-50 text-indigo-600 p-1.5 rounded-lg">
+                            <!-- Users icon added dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center text-sm text-gray-500 mb-4">
+                        <span class="font-medium">${cabin.capacity} Seats</span>
+                    </div>
+
+                    <div class="flex items-center text-sm font-semibold mb-2">
+                         <!-- Status icon added dynamically -->
+                         <span class="${statusTextColor}" id="status-text-${cabin.id}">
+                            ${statusText}
+                         </span>
+                    </div>
+
+                    ${statusInfo.name ? `
+                        <div class="text-xs bg-gray-100 p-2 rounded-lg text-gray-600 truncate">
+                            Host: ${statusInfo.name}
+                        </div>
+                    ` : ''}
+                    
+                    <button 
+                        class="mt-4 w-full py-2 rounded-lg font-bold text-sm transition-colors
+                            ${isSelected ? 'bg-amber-500 text-white shadow-md shadow-amber-300' : 
+                              isDisabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 
+                              'bg-indigo-500 text-white hover:bg-indigo-600'}
+                        "
+                        ${isDisabled ? 'disabled' : ''}
+                    >
+                        ${isSelected ? 'Selected' : isAvailable ? 'Select' : 'Unavailable'}
+                    </button>
+                `;
+
+                // Add Icons
+                cabinCard.querySelector('.bg-indigo-50').prepend(createIcon('Users', 'w-4 h-4'));
+                cabinCard.querySelector('.flex.items-center.text-sm.font-semibold.mb-2').prepend(createIcon(statusIconName, `w-5 h-5 ${statusTextColor.replace('text-', 'text-')} mr-2`));
+
+                // Add the specific timer for occupied cabins
+                if (isOccupied) {
+                    const statusSpan = cabinCard.querySelector(`#status-text-${cabin.id}`);
+                    statusSpan.id = `cabin-timer-${cabin.id}`; // Give it a unique ID for the timer
+                    cabinTimer(statusInfo.endTime, statusSpan);
+                }
+
+                gridDiv.appendChild(cabinCard);
+            });
+
+            section.appendChild(gridDiv);
+            return section;
+        };
+        
+        // Timer function for individual cabin cards
+        const cabinTimer = (endTime, element) => {
+            const calculateTime = () => {
+                const now = new Date().getTime();
+                const distance = endTime - now;
+
+                if (distance <= 0) {
+                    element.textContent = 'Free Soon';
+                    // Re-render to update the status once expired
+                    setTimeout(renderApp, 1000); 
+                    return;
+                }
+
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                
+                element.textContent = `Ends in ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+            };
+
+            calculateTime();
+            // We use a small interval here, but we don't store it globally as it's not critical
+            setInterval(calculateTime, 30000); // Update every 30 seconds
+        };
+
+        const renderBookingForm = () => {
+            const section = document.createElement('section');
+            section.id = 'student-request-form';
+            section.className = "animate-in slide-in-from-bottom-10 fade-in duration-500";
+            
+            const formContainer = document.createElement('div');
+            formContainer.className = "bg-white rounded-2xl shadow-xl border border-gray-100 p-8 max-w-3xl mx-auto";
+
+            const header = document.createElement('div');
+            header.className = "flex items-center gap-4 mb-8";
+            header.innerHTML = `
+                <div class="p-3 bg-amber-100 text-amber-600 rounded-xl">
+                    <!-- Zap icon added dynamically -->
+                </div>
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-900">Finalize Request</h2>
+                    <p class="text-gray-500">Booking <span class="font-bold text-gray-900">${state.selectedCabinId}</span> for ${BOOKING_DURATION_HOURS} hours (Capacity: ${state.selectedCapacity})</p>
+                </div>
+            `;
+            header.querySelector('.p-3').prepend(createIcon('Zap', 'w-6 h-6'));
+            formContainer.appendChild(header);
+
+            const fieldsDiv = document.createElement('div');
+            fieldsDiv.id = 'request-form-fields';
+            fieldsDiv.className = "space-y-4 mb-8";
+            
+            for (let idx = 0; idx < state.selectedCapacity; idx++) {
+                const memberDiv = document.createElement('div');
+                memberDiv.className = "group";
+                memberDiv.innerHTML = `
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
+                        ${idx === 0 ? 'Primary Requester (Your Name)' : `Group Member ${idx + 1}`}
+                    </label>
+                    <input 
+                        type="text"
+                        placeholder="${idx === 0 ? "Your Full Name" : "Group Member Full Name"}"
+                        class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    />
+                `;
+                // Add event listener to update state.groupMembers array on input change
+                const input = memberDiv.querySelector('input');
+                input.value = state.groupMembers[idx] || '';
+                input.addEventListener('input', (e) => {
+                    const newM = [...state.groupMembers];
+                    newM[idx] = e.target.value;
+                    setState({ groupMembers: newM });
+                });
+                fieldsDiv.appendChild(memberDiv);
+            }
+            formContainer.appendChild(fieldsDiv);
+
+            const submitBtn = document.createElement('button');
+            submitBtn.className = "w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all transform active:scale-[0.99]";
+            submitBtn.textContent = 'Submit Request';
+            submitBtn.onclick = submitBooking;
+            formContainer.appendChild(submitBtn);
+
+            section.appendChild(formContainer);
+            return section;
+        };
+
+        const renderAdminPanel = () => {
+            const section = document.createElement('section');
+            section.className = "bg-white rounded-2xl p-8 border border-gray-200";
+
+            const headerDiv = document.createElement('div');
+            headerDiv.className = "flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6";
+            headerDiv.innerHTML = `
+                <h3 class="text-lg font-bold text-gray-800 flex items-center mb-4 sm:mb-0">
+                    <!-- Users icon added dynamically --> 
+                    Admin Queue (Pending & Active Sessions)
+                </h3>
+                <button id="export-csv-btn" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center py-2 px-3 border border-indigo-200 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-colors">
+                    <!-- Download icon added dynamically --> Export All Data (.csv)
+                </button>
+            `;
+            headerDiv.querySelector('h3').prepend(createIcon('Users', 'w-5 h-5 mr-2 text-indigo-500'));
+            headerDiv.querySelector('#export-csv-btn').prepend(createIcon('Download', 'w-4 h-4 mr-1'));
+            headerDiv.querySelector('#export-csv-btn').onclick = exportCSV;
+            section.appendChild(headerDiv);
+
+            const queueDiv = document.createElement('div');
+            queueDiv.className = "space-y-3";
+            section.appendChild(queueDiv);
+
+            const activeBookings = state.allBookings
+                .filter(b => b.status === 'Pending' || b.status === 'Approved')
+                .sort((a, b) => {
+                    const statusOrderA = a.status === 'Pending' ? 0 : 1;
+                    const statusOrderB = b.status === 'Pending' ? 0 : 1;
+                    if (statusOrderA !== statusOrderB) return statusOrderA - statusOrderB;
+                    const timeA = a.timestamp?.getTime ? a.timestamp.getTime() : 0;
+                    const timeB = b.timestamp?.getTime ? b.timestamp.getTime() : 0;
+                    return timeA - timeB;
+                });
+            
+            if (activeBookings.length === 0) {
+                queueDiv.innerHTML = '<div class="text-center text-gray-400 py-8 text-sm">No active requests or sessions in the queue.</div>';
+                return section;
+            }
+
+            activeBookings.forEach(b => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "flex flex-col sm:flex-row justify-between items-center p-4 bg-white border border-gray-100 rounded-xl shadow-sm mb-3 hover:shadow-md transition-shadow";
+                
+                const statusColor = b.status === 'Pending' ? 'bg-amber-500' : 'bg-emerald-500';
+                
+                itemDiv.innerHTML = `
+                    <div class="mb-3 sm:mb-0 w-full sm:w-auto">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="w-2 h-2 rounded-full ${statusColor}"></span>
+                            <span class="font-bold text-gray-800">${b.cabinId} (${b.capacity} Pax)</span>
+                        </div>
+                        <div class="text-sm text-gray-500 pl-4">
+                            Host: ${b.requesterName}
+                        </div>
+                        <div class="text-xs text-gray-400 pl-4">
+                            ${b.status === 'Pending' ? 'Requested' : 'Started'}: ${b.timestamp?.toLocaleTimeString ? b.timestamp.toLocaleTimeString() : 'N/A'}
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-2 w-full sm:w-auto">
+                        ${b.status === 'Pending' ? `
+                            <button id="approve-btn-${b.id}" class="flex-1 sm:flex-none py-1.5 px-3 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-200">Approve</button>
+                            <button id="reject-btn-${b.id}" class="flex-1 sm:flex-none py-1.5 px-3 bg-red-100 text-red-700 rounded-lg text-sm font-semibold hover:bg-red-200">Reject</button>
+                        ` : `
+                            <button id="force-complete-btn-${b.id}" class="w-full sm:w-auto py-1.5 px-3 bg-gray-100 text-gray-600 rounded-lg text-sm font-semibold hover:bg-gray-200">Force Complete</button>
+                        `}
+                    </div>
+                `;
+
+                queueDiv.appendChild(itemDiv);
+                
+                // Attach event listeners after adding to DOM
+                if (b.status === 'Pending') {
+                    document.getElementById(`approve-btn-${b.id}`).onclick = () => updateBookingStatus(b.id, 'Approved');
+                    document.getElementById(`reject-btn-${b.id}`).onclick = () => updateBookingStatus(b.id, 'Rejected');
+                } else if (b.status === 'Approved') {
+                    document.getElementById(`force-complete-btn-${b.id}`).onclick = () => updateBookingStatus(b.id, 'Completed');
+                }
+            });
+            
+            return section;
+        };
+
+
+        // --- APPLICATION ENTRY POINT ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initFirebase();
+            renderApp();
+        });
+
+    </script>
+</body>
+</html>

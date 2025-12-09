@@ -92,6 +92,11 @@
             alert: { message: '', classes: '', visible: false },
             modal: null,
         };
+        
+        // State variables for preserving focus during re-render
+        let focusedElementId = null;
+        let cursorPosition = 0;
+
 
         // --- UTILITY FUNCTIONS ---
 
@@ -289,6 +294,7 @@
             }
             
             const form = document.getElementById('request-form-fields');
+            // Re-fetch current values from DOM as state.groupMembers might be slightly behind if not typed fully
             const filledMembers = Array.from(form.querySelectorAll('input')).map(input => input.value.trim());
 
             if (!filledMembers[0]) {
@@ -427,11 +433,20 @@
         const renderApp = () => {
             const root = document.getElementById('app-root');
             if (!root) return;
+            
+            // --- 1. CAPTURE FOCUS STATE BEFORE RE-RENDER (THE FIX) ---
+            const activeElement = document.activeElement;
+            focusedElementId = null;
+            cursorPosition = 0;
+            if (activeElement && activeElement.tagName === 'INPUT' && activeElement.closest('#student-request-form')) {
+                focusedElementId = activeElement.id;
+                cursorPosition = activeElement.selectionStart;
+            }
 
             // Clear the existing content
             root.innerHTML = '';
             
-            // --- 1. Alert Component ---
+            // --- 2. Alert Component ---
             const alertDiv = document.createElement('div');
             alertDiv.className = `fixed top-6 right-6 p-5 rounded-xl text-left font-semibold shadow-2xl transition-all duration-700 ease-out z-50 
                 flex items-center space-x-3 backdrop-blur-md border border-white/20
@@ -441,7 +456,7 @@
             alertDiv.innerHTML = state.alert.message;
             root.appendChild(alertDiv);
             
-            // --- 2. Confirmation Modal ---
+            // --- 3. Confirmation Modal ---
             if (state.modal) {
                 const modalDiv = document.createElement('div');
                 modalDiv.className = "fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex justify-center items-center z-50 transition-all duration-300";
@@ -468,7 +483,7 @@
                 };
             }
 
-            // --- 3. Main App Structure ---
+            // --- 4. Main App Structure ---
             const mainApp = document.createElement('div');
             mainApp.className = "min-h-screen bg-slate-50 text-slate-900 pb-20";
             
@@ -495,21 +510,31 @@
             mainContent.className = "max-w-7xl mx-auto px-4 sm:px-8 -mt-16 space-y-12";
             mainApp.appendChild(mainContent);
             
-            // --- 4. User Status Card ---
+            // --- 5. User Status Card ---
             mainContent.appendChild(renderUserStatusCard());
 
-            // --- 5. Cabin Selection Grid ---
+            // --- 6. Cabin Selection Grid ---
             mainContent.appendChild(renderCabinGridSection());
 
-            // --- 6. Booking Form ---
+            // --- 7. Booking Form ---
             if (state.selectedCabinId && !state.userBooking) {
                 mainContent.appendChild(renderBookingForm());
             }
 
-            // --- 7. Admin Panel ---
+            // --- 8. Admin Panel ---
             mainContent.appendChild(renderAdminPanel());
 
             root.appendChild(mainApp);
+            
+            // --- 9. RESTORE FOCUS STATE AFTER RE-RENDER (THE FIX) ---
+            if (focusedElementId) {
+                const newFocusedElement = document.getElementById(focusedElementId);
+                if (newFocusedElement) {
+                    newFocusedElement.focus();
+                    // Restore cursor position
+                    newFocusedElement.setSelectionRange(cursorPosition, cursorPosition);
+                }
+            }
             
             // Restart the countdown timer after rendering
             if (countdownInterval) clearInterval(countdownInterval);
@@ -863,10 +888,11 @@
                 const memberDiv = document.createElement('div');
                 memberDiv.className = "group";
                 memberDiv.innerHTML = `
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
+                    <label for="member-input-${idx}" class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
                         ${idx === 0 ? 'Primary Requester (Your Name)' : `Group Member ${idx + 1}`}
                     </label>
                     <input 
+                        id="member-input-${idx}"
                         type="text"
                         placeholder="${idx === 0 ? "Your Full Name" : "Group Member Full Name"}"
                         class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
@@ -874,11 +900,13 @@
                 `;
                 // Add event listener to update state.groupMembers array on input change
                 const input = memberDiv.querySelector('input');
-                input.value = state.groupMembers[idx] || '';
+                // The value is read from state.groupMembers, which is updated by the event listener
+                input.value = state.groupMembers[idx] || ''; 
                 input.addEventListener('input', (e) => {
                     const newM = [...state.groupMembers];
                     newM[idx] = e.target.value;
-                    setState({ groupMembers: newM });
+                    // Crucially, setState calls renderApp, which is where the focus fix is needed
+                    setState({ groupMembers: newM }); 
                 });
                 fieldsDiv.appendChild(memberDiv);
             }
